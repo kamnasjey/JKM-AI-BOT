@@ -1,83 +1,297 @@
-from rr_filter import check_rr
+"""
+analyzer.py
+Ганбаярын multi-timeframe (D1, H4, H1, M15) анализыг IGMarket-ийн candlestick өгөгдлөөр хийж,
+entry / SL / TP болон R:R-ийг тооцоолж, Монгол тайлбар текст буцаана.
 
-# Candle-ийг энгийн dict байдлаар ашиглая: {"close": 2600, "high": ..., "low": ...}
+Гол public функцүүд:
+- analyze_pair_multi_tf_ig_v2(ig, epic, pair)
+- analyze_pair_multi_tf_ig(ig, epic, pair)  # v2-ийн alias
+"""
+
+from typing import List, Dict, Tuple
 
 
-def detect_trend(candles: list[dict]) -> str:
+# -------------------------------------------------------------------
+# ТУСЛАХ ФУНКЦУУД
+# -------------------------------------------------------------------
+
+
+def _detect_trend(candles: List[Dict], lookback: int = 40) -> str:
     """
-    Сүүлийн хэдэн close-оор чиглэл тодорхойлно.
-    Маш энгийн: өсөөд байвал up, унаад байвал down, бусад нь range.
+    Жижигхэн энгийн trend тодорхойлно:
+    - сүүлийн N свечийн эхний close-оос сүүлийн close мэдэгдэхүйц их байвал -> up
+    - мэдэгдэхүйц бага байвал -> down
+    - бусад үед -> range
     """
-    closes = [c["close"] for c in candles[-5:]]
-
-    if len(closes) < 3:
+    if len(candles) < 5:
         return "range"
 
-    if closes[-1] > closes[-2] > closes[-3]:
+    window = candles[-lookback:] if len(candles) > lookback else candles[:]
+    closes = [c["close"] for c in window]
+
+    first = closes[0]
+    last = closes[-1]
+
+    # хувь өөрчлөлт (0.3% босго)
+    if first == 0:
+        return "range"
+
+    change = (last - first) / abs(first)
+
+    if change > 0.003:
         return "up"
-    if closes[-1] < closes[-2] < closes[-3]:
+    elif change < -0.003:
         return "down"
+    else:
+        return "range"
 
-    return "range"
 
-
-def find_key_levels(candles: list[dict]) -> dict:
+def _detect_levels(candles: List[Dict], lookback: int = 80) -> Dict[str, float]:
     """
-    Маш энгийн support / resistance: бүх closes-ийн min/max.
-    Жинхэнэ ботод илүү нарийн алгоритм орно.
+    Сүүлийн lookback свечид хамгийн өндөр high, хамгийн доод low-г авч
+    support / resistance гэж тодорхойлно.
     """
-    closes = [c["close"] for c in candles]
-    support = min(closes)
-    resistance = max(closes)
-    return {"support": support, "resistance": resistance}
+    if not candles:
+        return {"support": 0.0, "resistance": 0.0}
+
+    window = candles[-lookback:] if len(candles) > lookback else candles[:]
+
+    lows = [c["low"] for c in window]
+    highs = [c["high"] for c in window]
+
+    support = min(lows)
+    resistance = max(highs)
+
+    return {
+        "support": round(support, 2),
+        "resistance": round(resistance, 2),
+    }
 
 
-def build_fake_candles(start: float, step: float, n: int) -> list[dict]:
+def _choose_direction(d1_trend: str, h4_trend: str) -> str:
     """
-    Жаахан хиймэл trend үүсгэж өгнө (жишээ dataset).
-    start: эхний үнэ
-    step: алхам (эерэг бол өснө, сөрөг бол унана)
+    D1 ба H4 чиглэлийг харж ерөнхий чиглэл сонгоно.
     """
-    candles = []
-    price = start
-    for _ in range(n):
-        close = price
-        high = close + abs(step) * 0.6
-        low = close - abs(step) * 0.6
-        candles.append({"close": close, "high": high, "low": low})
-        price += step
-    return candles
+    if d1_trend == "up" and h4_trend == "up":
+        return "buy"
+    if d1_trend == "down" and h4_trend == "down":
+        return "sell"
+    return "none"
 
 
-def analyze_pair_fake(pair: str) -> dict | None:
+def _prepare_entry_sl_tp(
+    direction: str,
+    m15_candles: List[Dict],
+    h4_levels: Dict[str, float],
+) -> Tuple[bool, Dict[str, float], float]:
     """
-    D1, H4, H1, M30, M15 бүх timeframe-д хиймэл data үүсгээд,
-    Ганбаярын философоор нэг BUY setup гаргаж үзнэ.
+    Entry / SL / TP сонгож, R:R тооцоолно.
+
+    return:
+        (has_setup, result_dict, rr_value)
+
+    result_dict:
+        {
+            "entry": float,
+            "sl": float,
+            "tp": float
+        }
+    """
+    if not m15_candles:
+        return False, {}, 0.0
+
+    last = m15_candles[-1]
+    entry = float(last["close"])
+    last_high = float(last["high"])
+    last_low = float(last["low"])
+
+    # Жижиг buffer – свечийн өндрийн тал орчим
+    candle_range = max(last_high - last_low, 0.0001)
+    buffer = candle_range * 0.5
+
+    if direction == "buy":
+        sl = last_low - buffer
+        tp = float(h4_levels["resistance"])  # дээш зорилго
+
+        risk = entry - sl
+        reward = tp - entry
+
+        if risk <= 0 or reward <= 0:
+            return False, {}, 0.0
+
+        rr = reward / risk
+
+        if rr < 3.0:
+            # Хэрэв H4 resistance хэт ойрхон байвал жаахан сунгаж үзэж болно
+            extra = candle_range * 3
+            tp_alt = tp + extra
+            reward_alt = tp_alt - entry
+            if reward_alt > 0:
+                rr_alt = reward_alt / risk
+                if rr_alt >= 3.0:
+                    return True, {
+                        "entry": round(entry, 3),
+                        "sl": round(sl, 3),
+                        "tp": round(tp_alt, 3),
+                    }, rr_alt
+            return False, {}, rr
+        else:
+            return True, {
+                "entry": round(entry, 3),
+                "sl": round(sl, 3),
+                "tp": round(tp, 3),
+            }, rr
+
+    elif direction == "sell":
+        sl = last_high + buffer
+        tp = float(h4_levels["support"])  # доош зорилго
+
+        risk = sl - entry
+        reward = entry - tp
+
+        if risk <= 0 or reward <= 0:
+            return False, {}, 0.0
+
+        rr = reward / risk
+
+        if rr < 3.0:
+            extra = candle_range * 3
+            tp_alt = tp - extra
+            reward_alt = entry - tp_alt
+            if reward_alt > 0:
+                rr_alt = reward_alt / risk
+                if rr_alt >= 3.0:
+                    return True, {
+                        "entry": round(entry, 3),
+                        "sl": round(sl, 3),
+                        "tp": round(tp_alt, 3),
+                    }, rr_alt
+            return False, {}, rr
+        else:
+            return True, {
+                "entry": round(entry, 3),
+                "sl": round(sl, 3),
+                "tp": round(tp, 3),
+            }, rr
+
+    else:
+        return False, {}, 0.0
+
+
+def _trend_mn(trend: str) -> str:
+    if trend == "up":
+        return "uptrend (өсөлт)"
+    if trend == "down":
+        return "downtrend (бууралт)"
+    return "range / тодорхой бус"
+
+
+# -------------------------------------------------------------------
+# ГОЛ ПУБЛИК ФУНКЦ
+# -------------------------------------------------------------------
+
+
+def analyze_pair_multi_tf_ig_v2(ig, epic: str, pair: str) -> str:
+    """
+    IG client, epic, pair нэр (XAUUSD гэх мэт) авч:
+    - D1, H4, H1, M15 candlestick татна
+    - trend + түвшин тодорхойлно
+    - Ганбаярын дүрмийн дагуу (D1+H4 чиглэл, R:R>=1:3, SL заавал г.м) setup хайна
+    - Монгол тайлбар текст буцаана (Telegram бот шууд илгээхэд бэлэн)
     """
 
-    # --- 1. D1 + H4: чиглэл, түвшин ---
-    d1 = build_fake_candles(start=2350, step=5, n=50)   # өсч байгаа daily
-    h4 = build_fake_candles(start=2420, step=3, n=60)   # өсөлттэй
+    lines = []
+    lines.append("===== ГАНБАЯР MULTI-TF IG ANALYZER (v2) =====")
+    lines.append(f"PAIR: {pair}")
 
-    d1_trend = detect_trend(d1)
-    h4_trend = detect_trend(h4)
-    d1_levels = find_key_levels(d1)
-    h4_levels = find_key_levels(h4)
+    # ----------------- DATA TATAX -----------------
+    try:
+        d1_candles = ig.get_candles(epic, "DAY", max_points=200)
+        h4_candles = ig.get_candles(epic, "HOUR_4", max_points=200)
+        h1_candles = ig.get_candles(epic, "HOUR", max_points=200)
+        m15_candles = ig.get_candles(epic, "MINUTE_15", max_points=200)
+    except Exception as e:
+        lines.append("")
+        lines.append(f"❌ IG өгөгдөл татах үед алдаа гарлаа: {e}")
+        return "\n".join(lines)
 
-    # Ганбаярын логик: D1 + H4 хоёул up байвал BUY тал хайна
-    if not (d1_trend == "up" and h4_trend == "up"):
-        return None  # одоохондоо зөвхөн uptrend case
+    # -------------- TREND + LEVELS ----------------
+    d1_trend = _detect_trend(d1_candles)
+    h4_trend = _detect_trend(h4_candles)
+    h1_trend = _detect_trend(h1_candles)
+    m15_trend = _detect_trend(m15_candles)
 
-    # --- 2. H1 + M30: pullback / zone ---
-    h1 = build_fake_candles(start=2440, step=-1.5, n=80)   # жаахан pullback
-    m30 = build_fake_candles(start=2435, step=-0.8, n=60)
+    d1_levels = _detect_levels(d1_candles)
+    h4_levels = _detect_levels(h4_candles)
+    m15_levels = _detect_levels(m15_candles)
 
-    h1_levels = find_key_levels(h1)
-    m30_levels = find_key_levels(m30)
+    lines.append("D1:")
+    lines.append(f"  Trend : { _trend_mn(d1_trend) }")
+    lines.append(f"  Levels: {d1_levels}")
+    lines.append("H4:")
+    lines.append(f"  Trend : { _trend_mn(h4_trend) }")
+    lines.append(f"  Levels: {h4_levels}")
+    lines.append("H1:")
+    lines.append(f"  Trend : { _trend_mn(h1_trend) }")
+    lines.append("M15:")
+    lines.append(f"  Trend : { _trend_mn(m15_trend) }")
+    lines.append(f"  Levels: {m15_levels}")
+    lines.append("")
 
-    # support бүсийг ойролцоогоор тогтооно (жишээ)
-    buy_zone_low = h1_levels["support"]
-    buy_zone_high = buy_zone_low + 5
-    buy_zone = (buy_zone_low, buy_zone_high)
+    # -------------- D1 + H4 ЧИГЛЭЛ ----------------
+    direction = _choose_direction(d1_trend, h4_trend)
 
-    # ---
+    if direction == "none":
+        lines.append(
+            "ℹ NO TRADE: D1 ба H4 чиглэл хоорондоо давхцахгүй (эсвэл range) байгаа тул "
+            "чанартай trend continuation setup хайхгүй."
+        )
+        return "\n".join(lines)
+
+    dir_text = "BUY" if direction == "buy" else "SELL"
+    lines.append(f"Ерөнхий чиглэл: {dir_text} (D1 + H4 зэрэгцсэн)")
+
+    # -------------- M15 ДЭЭР ENTRY  ----------------
+    has_setup, esltp, rr = _prepare_entry_sl_tp(direction, m15_candles, h4_levels)
+
+    if not has_setup:
+        lines.append("")
+        lines.append(
+            "ℹ NO TRADE: M15 дээрхи сүүлийн candle-аас авсан entry/SL-ийн хувьд "
+            "H4 түвшин рүү чиглэсэн TP дээр R:R ≥ 1:3 гарахгүй байна. "
+            "Ганбаярын дүрмээр энэ сетапыг алгаслаа."
+        )
+        lines.append(f"(Одоогийн R:R ойролцоогоор: {rr:.2f})")
+        return "\n".join(lines)
+
+    entry = esltp["entry"]
+    sl = esltp["sl"]
+    tp = esltp["tp"]
+
+    lines.append("")
+    lines.append(f"✅ Боломжит {dir_text} setup илэрлээ (R:R ≈ {rr:.2f})")
+    lines.append(f"Entry: {entry}")
+    lines.append(f"SL   : {sl}")
+    lines.append(f"TP   : {tp}")
+    lines.append("")
+    lines.append("Тайлбар (Ганбаярын логик):")
+    if direction == "buy":
+        lines.append("- D1 ба H4 uptrend байгаа тул зөвхөн BUY setup хайсан.")
+        lines.append("- H4 дээрх support түвшин дээрээс дээш хөдөлж буй гэж үзэж байна.")
+    else:
+        lines.append("- D1 ба H4 downtrend байгаа тул зөвхөн SELL setup хайсан.")
+        lines.append("- H4 дээрх resistance түвшин дээрээс доош хөдөлж буй гэж үзэж байна.")
+    lines.append(
+        "- M15 дээр сүүлийн свечийн мэдээллээр entry, SL-ийг тооцоод, "
+        "TP-ээ H4-ийн гол түвшин (support/resistance) рүү тавьж, R:R ≥ 1:3 эсэхийг шалгасан."
+    )
+    lines.append("- Stop Loss заавал байна, R:R < 1:3 бол сетапыг автоматаар алгасна.")
+    lines.append("")
+    lines.append("⚠ Санамж: Энэ бол зөвхөн анализ ба төлөвлөгөө. Шууд оролт хийхээсээ өмнө өөрөө дахин шалгана.")
+
+    return "\n".join(lines)
+
+
+# Хуучин нэршлийг дэмжих alias (ямар нэгэн хуучин код хэрэглэж байвал ажиллахын тулд)
+def analyze_pair_multi_tf_ig(ig, epic: str, pair: str) -> str:
+    return analyze_pair_multi_tf_ig_v2(ig, epic, pair)
