@@ -1,26 +1,53 @@
 # config.py
 """
-Энд бүх гол тохиргоонууд байна:
-- Telegram токен
-- Admin user ID
-- Ажиглах хосууд, timeframe, авто scan интервал
+Тохиргооны төв файл.
+
+Telegram болон арилжааны үндсэн тохиргоонуудыг эндээс удирдана.
+Нууц мэдээллүүдийг Render / .env дээрээс ENV хувьсагчаар уншина.
+
+Заавал ENV дээр тавих хувьсагчууд:
+  TELEGRAM_BOT_TOKEN  -> BotFather-аас авсан Telegram ботын токен
+
+Сонголтоор:
+  DEFAULT_CHAT_ID     -> Зарим мессежийг заавал энэ chat руу илгээх бол
+  ADMIN_USER_ID       -> Админ хэрэглэгчийн Telegram user id
+  AUTO_SCAN_INTERVAL_MIN -> Авто скан давтамж (минут)
 """
 
-# --- Telegram ---
-# config.py
 import os
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
-DEFAULT_CHAT_ID = 0
+
+def _get_int_env(name: str, default: int) -> int:
+    """
+    ENV хувьсагчаас int утга авах, байхгүй эсвэл буруу байвал default-оо буцаана.
+    """
+    val = os.getenv(name)
+    if not val:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
 
 
-# Админ хэрэглэгчийн Telegram user ID
-ADMIN_USER_ID = 1445509840  # Чиний ID
+# --- Telegram тохиргоо ---
+
+# Render / .env дээр:
+# TELEGRAM_BOT_TOKEN=7696542:....
+TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+# Хэрвээ DEFAULT_CHAT_ID-г тогтоосон бол зарим үед chat_id дамжуулахгүйгээр
+# шууд энэ чат руу илгээж болно. Тохируулаагүй бол 0 хэвээр үлдэнэ.
+DEFAULT_CHAT_ID: int = _get_int_env("DEFAULT_CHAT_ID", 0)
+
+# Админы ID – эрх нээх, log авах гэх мэт.
+# ENV дээр ADMIN_USER_ID тавибал тэрийг, үгүй бол доорх default-ыг ашиглана.
+ADMIN_USER_ID: int = _get_int_env("ADMIN_USER_ID", 1445509840)
 
 
-# --- Арилжааны тохиргоо ---
+# --- Арилжааны үндсэн тохиргоо ---
 
-# IG дээрээ ашиглах хосууд
+# Автомат / гар скан хийх хослолууд
 WATCH_PAIRS = [
     "XAUUSD",
     "EURJPY",
@@ -31,14 +58,11 @@ WATCH_PAIRS = [
     "EURUSD",
 ]
 
-# Авто скан хийх timeframe (M5 дээр 5 минут тутам)
+# Авто скан хийх timeframe (5 минут тутам M5)
 AUTO_TIMEFRAME = "M5"
 
 # Гар аргаар 'Pair хайх' дээр ашиглах timeframe
 MANUAL_TIMEFRAME = "M15"
 
 # Авто скан давтамж (минут)
-AUTO_SCAN_INTERVAL_MIN = 5
-
-# Авто скан хийхэд ашиглах moving average-ийн хугацаа
-AUTO_MA_PERIOD = 50
+AUTO_SCAN_INTERVAL_MIN: int = _get_int_env("AUTO_SCAN_INTERVAL_MIN", 5)
