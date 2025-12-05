@@ -1,3 +1,6 @@
-python-telegram-bot
+httpx
+apscheduler
+matplotlib
 requests
 openai
+python-dotenv

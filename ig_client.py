@@ -1,15 +1,33 @@
 # ig_client.py
+"""
+IG Markets REST API client – login хийж, candles татах.
+
+ENV хувьсагчууд:
+  IG_API_KEY
+  IG_USERNAME
+  IG_PASSWORD
+  IG_ACCOUNT_ID
+  IG_IS_DEMO = "true" / "false"
+
+EPIC хувьсагчууд (pair бүрийн):
+  EPIC_XAUUSD
+  EPIC_EURJPY
+  EPIC_GBPJPY
+  ...
+
+Эдгээрийг Render / .env дээрээ тохируулна.
+"""
+
+from __future__ import annotations
 import os
-from typing import List, Dict
+from typing import List, Dict, Any, Optional
 
 import requests
 
 
 class IGClient:
-    """
-    IG Markets REST API-тай холбогдож,
-    login хийж, candles (үнэ) татдаг энгийн client.
-    """
+    DEMO_BASE = "https://demo-api.ig.com/gateway/deal"
+    LIVE_BASE = "https://api.ig.com/gateway/deal"
 
     def __init__(
         self,
@@ -17,167 +35,129 @@ class IGClient:
         username: str,
         password: str,
         account_id: str,
-        is_demo: bool = True,
+        is_demo: bool = False,
     ) -> None:
         self.api_key = api_key
         self.username = username
         self.password = password
         self.account_id = account_id
-        self.is_demo = is_demo
-
-        # Demo эсвэл live endpoint
-        self.base_url = (
-            "https://demo-api.ig.com/gateway/deal"
-            if is_demo
-            else "https://api.ig.com/gateway/deal"
-        )
+        self.base_url = self.DEMO_BASE if is_demo else self.LIVE_BASE
 
         self.session = requests.Session()
-        self.cst: str | None = None
-        self.xst: str | None = None
+        self.cst: Optional[str] = None
+        self.x_security_token: Optional[str] = None
+        self._authenticated = False
 
-    # ------------ ENV-ээс унших factory ------------
+    # ------------------------------------------------------------------
+    # Factory
+    # ------------------------------------------------------------------
     @classmethod
-    def from_env(cls, is_demo: bool = True) -> "IGClient":
+    def from_env(cls, is_demo: bool = False) -> "IGClient":
         api_key = os.getenv("IG_API_KEY", "")
         username = os.getenv("IG_USERNAME", "")
         password = os.getenv("IG_PASSWORD", "")
         account_id = os.getenv("IG_ACCOUNT_ID", "")
 
-        if not all([api_key, username, password, account_id]):
-            raise RuntimeError(
-                "IG env хувьсагч дутуу байна. "
-                "IG_API_KEY, IG_USERNAME, IG_PASSWORD, IG_ACCOUNT_ID бүгд хэрэгтэй."
-            )
+        if not api_key or not username or not password or not account_id:
+            raise RuntimeError("IG ENV тохиргоо дутуу байна (IG_API_KEY, IG_USERNAME, IG_PASSWORD, IG_ACCOUNT_ID).")
 
-        return cls(
-            api_key=api_key,
-            username=username,
-            password=password,
-            account_id=account_id,
-            is_demo=is_demo,
-        )
+        client = cls(api_key, username, password, account_id, is_demo=is_demo)
+        client.login()
+        return client
 
-    # ------------ LOGIN ------------
+    # ------------------------------------------------------------------
+    # Auth
+    # ------------------------------------------------------------------
     def login(self) -> None:
-        url = self.base_url + "/session"
-
+        url = f"{self.base_url}/session"
         headers = {
             "X-IG-API-KEY": self.api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "Version": "2",
         }
-
-        payload = {
+        data = {
             "identifier": self.username,
             "password": self.password,
         }
-
-        resp = self.session.post(url, json=payload, headers=headers)
-
-        # Debug мэдээлэл – 403, 401 г.м шалтгааныг харах гэж
-        print("IG login status:", resp.status_code)
-        print("IG login body  :", resp.text)
-
-        if not resp.ok:
-            # HTTPError шидэхийн оронд ойлгомжтой RuntimeError шидье
-            raise RuntimeError(f"IG login failed: {resp.status_code} {resp.text}")
+        resp = self.session.post(url, json=data, headers=headers)
+        resp.raise_for_status()
 
         self.cst = resp.headers.get("CST")
-        self.xst = resp.headers.get("X-SECURITY-TOKEN")
+        self.x_security_token = resp.headers.get("X-SECURITY-TOKEN")
+        self._authenticated = True
 
-        if not self.cst or not self.xst:
-            raise RuntimeError(
-                "IG login succeeded but CST/X-SECURITY-TOKEN headers алга байна."
-            )
-
-    # ------------ CANDLES ТАТАХ ------------
-    def get_candles(
-        self, epic: str, resolution: str, max_points: int = 100
-    ) -> List[Dict]:
-        """
-        epic: IG instrument EPIC код (ж: CS.D.GOLD.CFD.IP)
-        resolution: MINUTE_15, HOUR_1, DAY гэх мэт
-        """
-        if self.cst is None or self.xst is None:
-            self.login()
-
-        url = self.base_url + f"/prices/{epic}"
-        params = {
-            "resolution": resolution,
-            "max": max_points,
-        }
-
-        headers = {
+        # Account switch
+        acc_url = f"{self.base_url}/session"
+        acc_headers = {
             "X-IG-API-KEY": self.api_key,
             "CST": self.cst,
-            "X-SECURITY-TOKEN": self.xst,
+            "X-SECURITY-TOKEN": self.x_security_token,
+            "Content-Type": "application/json",
             "Accept": "application/json",
-            "Version": "3",
+            "Version": "1",
+        }
+        acc_data = {"accountId": self.account_id, "defaultAccount": True}
+        self.session.put(acc_url, json=acc_data, headers=acc_headers)
+
+    def _auth_headers(self, version: str = "3") -> Dict[str, str]:
+        if not self._authenticated:
+            self.login()
+        return {
+            "X-IG-API-KEY": self.api_key,
+            "CST": self.cst or "",
+            "X-SECURITY-TOKEN": self.x_security_token or "",
+            "Accept": "application/json",
+            "Version": version,
         }
 
-        resp = self.session.get(url, params=params, headers=headers)
-        print("IG prices status:", resp.status_code)
+    # ------------------------------------------------------------------
+    # Prices
+    # ------------------------------------------------------------------
+    def get_candles(
+        self,
+        epic: str,
+        resolution: str,
+        max_points: int = 300,
+    ) -> List[Dict[str, Any]]:
+        """
+        /prices/{epic}/{resolution}/{max} endpoint-оор свеч татах.
+        Буцаах формат: [{time, open, high, low, close}, ...]
+        """
+        url = f"{self.base_url}/prices/{epic}/{resolution}/{max_points}"
+        headers = self._auth_headers(version="3")
 
-        if not resp.ok:
-            raise RuntimeError(
-                f"IG get prices failed: {resp.status_code} {resp.text}"
-            )
+        resp = self.session.get(url, headers=headers)
+        resp.raise_for_status()
 
         data = resp.json()
         prices = data.get("prices", [])
 
-        candles: List[Dict] = []
+        candles: List[Dict[str, Any]] = []
 
         for p in prices:
             t = p.get("snapshotTimeUTC") or p.get("snapshotTime")
-            op = p["openPrice"]
-            hp = p["highPrice"]
-            lp = p["lowPrice"]
-            cp = p["closePrice"]
+            op = p.get("openPrice", {})
+            hp = p.get("highPrice", {})
+            lp = p.get("lowPrice", {})
+            cp = p.get("closePrice", {})
 
-            def mid(field: Dict[str, str]) -> float:
-                return (float(field["bid"]) + float(field["ask"])) / 2.0
+            # bid/ask-аас дундаж авах (simple)
+            def _mid(x: Dict[str, Any]) -> float:
+                b = float(x.get("bid", 0.0))
+                a = float(x.get("ask", 0.0))
+                if b == 0 and a == 0:
+                    return float(x.get("lastTraded", 0.0))
+                return (b + a) / 2.0 if a and b else (b or a)
 
             candles.append(
                 {
                     "time": t,
-                    "open": mid(op),
-                    "high": mid(hp),
-                    "low": mid(lp),
-                    "close": mid(cp),
+                    "open": _mid(op),
+                    "high": _mid(hp),
+                    "low": _mid(lp),
+                    "close": _mid(cp),
                 }
             )
 
         return candles
-    # ------------ MARKET SEARCH (EPIC олох) ------------
-    def search_markets(self, search_term: str):
-        """
-        IG-ийн /markets endpoint-ээр searchTerm-аар хайгаад
-        EPIC-үүдийг буцаана.
-        """
-        if self.cst is None or self.xst is None:
-            self.login()
-
-        url = self.base_url + "/markets"
-        params = {"searchTerm": search_term}
-
-        headers = {
-            "X-IG-API-KEY": self.api_key,
-            "CST": self.cst,
-            "X-SECURITY-TOKEN": self.xst,
-            "Accept": "application/json",
-            "Version": "1",
-        }
-
-        resp = self.session.get(url, params=params, headers=headers)
-        print("IG search status:", resp.status_code)
-
-        if not resp.ok:
-            raise RuntimeError(
-                f"IG search failed: {resp.status_code} {resp.text}"
-            )
-
-        data = resp.json()
-        return data.get("markets", [])

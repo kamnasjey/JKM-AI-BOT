@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "profiles": {
+    "1445509840": {
+      "name": "Swing Trend Retracement Strategy",
+      "style": "Swing",
+      "min_rr": 3.0,
+      "risk_per_trade_pct": 1.0,
+      "risk_pips": 0.0,
+      "timeframes": [
+        "H4",
+        "H1",
+        "M15",
+        "M5"
+      ],
+      "notes": "Determine main trend on H4 and H1; trade only in trend direction (BUY in uptrend, SELL in downtrend). Entry on M15 or M5 at 50-61.8% Fibonacci retracement of last move. Stop loss placed beyond last swing high/low, not fixed pips. Take profit at next major level. Hold positions from several hours to over a day."
+    }
+  }
+}
