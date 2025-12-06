@@ -7,7 +7,7 @@ ENV хувьсагчууд:
   IG_USERNAME
   IG_PASSWORD
   IG_ACCOUNT_ID
-  IG_IS_DEMO = "true" / "false"
+  IG_IS_DEMO = "true" / "false"  # demo=True бол demo-api, false бол live-api
 
 EPIC хувьсагчууд (pair бүрийн):
   EPIC_XAUUSD
@@ -49,17 +49,24 @@ class IGClient:
         self._authenticated = False
 
     # ------------------------------------------------------------------
-    # Factory
+    # Factory – ENV-ээс бүх тохиргоо унших
     # ------------------------------------------------------------------
     @classmethod
-    def from_env(cls, is_demo: bool = False) -> "IGClient":
+    def from_env(cls) -> "IGClient":
         api_key = os.getenv("IG_API_KEY", "")
         username = os.getenv("IG_USERNAME", "")
         password = os.getenv("IG_PASSWORD", "")
         account_id = os.getenv("IG_ACCOUNT_ID", "")
+        is_demo_raw = os.getenv("IG_IS_DEMO", "false").strip().lower()
+
+        # "true", "1", "yes" бол demo, бусад нь live гэж үзнэ
+        is_demo = is_demo_raw in ("true", "1", "yes", "y")
 
         if not api_key or not username or not password or not account_id:
-            raise RuntimeError("IG ENV тохиргоо дутуу байна (IG_API_KEY, IG_USERNAME, IG_PASSWORD, IG_ACCOUNT_ID).")
+            raise RuntimeError(
+                "IG ENV тохиргоо дутуу байна (IG_API_KEY, IG_USERNAME, "
+                "IG_PASSWORD, IG_ACCOUNT_ID заавал хэрэгтэй)."
+            )
 
         client = cls(api_key, username, password, account_id, is_demo=is_demo)
         client.login()
@@ -80,11 +87,15 @@ class IGClient:
             "identifier": self.username,
             "password": self.password,
         }
+
         resp = self.session.post(url, json=data, headers=headers)
         resp.raise_for_status()
 
         self.cst = resp.headers.get("CST")
         self.x_security_token = resp.headers.get("X-SECURITY-TOKEN")
+        if not self.cst or not self.x_security_token:
+            raise RuntimeError("IG login амжилтгүй: CST / X-SECURITY-TOKEN ирсэнгүй.")
+
         self._authenticated = True
 
         # Account switch
@@ -98,7 +109,8 @@ class IGClient:
             "Version": "1",
         }
         acc_data = {"accountId": self.account_id, "defaultAccount": True}
-        self.session.put(acc_url, json=acc_data, headers=acc_headers)
+        acc_resp = self.session.put(acc_url, json=acc_data, headers=acc_headers)
+        acc_resp.raise_for_status()
 
     def _auth_headers(self, version: str = "3") -> Dict[str, str]:
         if not self._authenticated:
