@@ -132,6 +132,17 @@ class Swing:
     low: float
     high: float
 
+@dataclass
+class FiboLevels:
+    """
+    Swing дээр суурилсан Fibo түвшинүүд.
+    retracements: {түвшин: үнэ}
+    extensions: {түвшин: үнэ}
+    """
+    swing: Swing
+    retracements: dict[float, float]
+    extensions: dict[float, float]
+
 
 @dataclass
 class FiboZoneInfo:
@@ -189,18 +200,11 @@ def check_fibo_retrace_zone(
     """
     last_close = candles[-1].close if candles else 0.0
 
-    low = swing.low
-    high = swing.high
-    diff = high - low
-    if diff <= 0:
-        return FiboZoneInfo(False, 0, 0, last_close)
-
-    lvl1 = low + diff * levels[0]
-    lvl2 = low + diff * levels[1]
-
-    zone_low = min(lvl1, lvl2)
-    zone_high = max(lvl1, lvl2)
-
+    fibo_levels = compute_fibo_levels(swing)
+    val1 = fibo_levels.retracements.get(levels[0], 0)
+    val2 = fibo_levels.retracements.get(levels[1], 0)
+    zone_low = min(val1, val2)
+    zone_high = max(val1, val2)
     in_zone = zone_low <= last_close <= zone_high
 
     return FiboZoneInfo(
@@ -292,3 +296,23 @@ def build_basic_setup(
         trend_info=trend,
         fibo_info=fibo,
     )
+def compute_fibo_levels(
+    swing: Swing,
+    retrace_levels: tuple[float, ...] = (0.236, 0.382, 0.5, 0.618, 0.786, 1.0),
+    extension_levels: tuple[float, ...] = (1.272, 1.618, 2.0, 2.618),
+) -> FiboLevels:
+    """
+    Swing low/high дээр суурилж бүх retracement болон extension түвшинг тооцоолно.
+    - retracements: low + diff * level  (0–1 хүрээ)
+    - extensions:   high + diff * (level - 1.0)  (1.0-ээс дээш)
+    NOTE:
+      * direction-ыг одоохондоо simple байдлаар авч үзнэ:
+        swing.low < swing.high гэж үзэж, up swing гэж тооцдог.
+      * Хэрэв swing.high <= swing.low бол хоосон retracements/extensions буцаана.
+    """
+    diff = swing.high - swing.low
+    if diff <= 0:
+        return FiboLevels(swing, {}, {})
+    retracements = {level: swing.low + diff * level for level in retrace_levels}
+    extensions = {level: swing.high + diff * (level - 1.0) for level in extension_levels}
+    return FiboLevels(swing, retracements, extensions)
