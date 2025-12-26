@@ -1,0 +1,2067 @@
+<!DOCTYPE html>
+<html lang="mn">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JKM Trading AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+    rel="stylesheet">
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <style>
+    :root {
+      --bg-start: #f3f5ff;
+      --bg-end: #ffffff;
+      --text: #102043;
+      --muted: #5c6782;
+      --accent: #3b7bff;
+      --accent-dark: #2651ff;
+      --border: #e5e9ff;
+      --card: #ffffff;
+      --shadow: 0 20px 45px rgba(17, 37, 94, 0.08);
+      --radius-lg: 28px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(145deg, var(--bg-start), var(--bg-end));
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font-family: inherit;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(16px);
+      background: rgba(243, 245, 255, 0.82);
+      border-bottom: 1px solid rgba(229, 233, 255, 0.8);
+      padding: 18px 5vw;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo-pill {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      background: #0d1a3f;
+      color: #fff;
+      font-weight: 600;
+      box-shadow: var(--shadow);
+    }
+
+    .logo-pill small {
+      font-size: 11px;
+      opacity: 0.75;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .main-nav {
+      display: flex;
+      gap: 24px;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .nav-public,
+    .nav-auth {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .nav-auth {
+      display: none;
+      gap: 24px;
+    }
+
+    .nav-link {
+      color: var(--muted);
+    }
+
+    .nav-link:hover {
+      color: var(--accent);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .language-toggle {
+      display: inline-flex;
+      gap: 6px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 4px;
+    }
+
+    .language-toggle button {
+      border: none;
+      background: transparent;
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .language-toggle button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .ghost-btn,
+    .primary-btn {
+      border-radius: 999px;
+      padding: 10px 20px;
+      font-weight: 600;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+    }
+
+    .primary-btn {
+      border: none;
+      background: linear-gradient(120deg, var(--accent), var(--accent-dark));
+      color: #fff;
+      box-shadow: 0 18px 30px rgba(59, 123, 255, 0.35);
+    }
+
+    .ghost-btn:focus,
+    .primary-btn:focus,
+    .nav-link:focus,
+    .language-toggle button:focus,
+    .form-field input:focus,
+    .form-field textarea:focus,
+    .form-field select:focus {
+      outline: 2px solid rgba(59, 123, 255, 0.35);
+      outline-offset: 2px;
+    }
+
+    .account-pill {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(59, 123, 255, 0.2);
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    main.landing {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 64px clamp(18px, 5vw, 56px) 40px;
+    }
+
+    section[id],
+    main[id] {
+      scroll-margin-top: 120px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 40px;
+      align-items: center;
+      margin-bottom: 80px;
+    }
+
+    .hero label {
+      font-size: 12px;
+      letter-spacing: 0.28em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .hero h1 {
+      font-size: clamp(32px, 4vw, 52px);
+      margin: 16px 0 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      line-height: 1.15;
+    }
+
+    .hero h4 {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .hero p {
+      margin-bottom: 20px;
+      max-width: 520px;
+    }
+
+    .hero ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 28px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .cta-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .hero-visual {
+      padding: 28px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: var(--shadow);
+    }
+
+    .mini-dashboard {
+      border-radius: 22px;
+      border: 1px solid #dfe5ff;
+      padding: 18px;
+      background: linear-gradient(145deg, #f7f8ff, #fff);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .mini-dashboard .chart-preview {
+      border-radius: 18px;
+      border: 1px dashed #cfd7ff;
+      height: 180px;
+      background: repeating-linear-gradient(120deg, rgba(59, 123, 255, 0.15), rgba(59, 123, 255, 0.15) 12px, transparent 12px, transparent 24px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mini-dashboard .chart-preview::after {
+      content: '';
+      position: absolute;
+      inset: 12px;
+      border-radius: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.7);
+    }
+
+    .section {
+      margin-bottom: 80px;
+    }
+
+    .section h2 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .section h4 {
+      margin-top: 0;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .feature-grid,
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card,
+    .step-card,
+    .contact-card,
+    .auth-card {
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .feature-card h3,
+    .step-card h3 {
+      margin-top: 12px;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .step-card span {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .auth-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .auth-tabs {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .auth-tabs button {
+      flex: 1;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #f6f8ff;
+      padding: 10px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .auth-tabs button.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 14px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .form-field input,
+    .form-field textarea,
+    .form-field select {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+      font-size: 14px;
+      color: var(--text);
+      background: #fdfdff;
+    }
+
+    .form-field select {
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      padding-right: 38px;
+    }
+
+    .form-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .contact-card .contact-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+    }
+
+    .contact-card button {
+      width: 100%;
+      margin-top: 24px;
+      padding: 14px;
+      font-size: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .site-footer {
+      text-align: center;
+      padding: 32px 20px 40px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .site-footer nav {
+      margin-top: 8px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .dashboard-app {
+      display: none;
+      padding: 40px 5vw 80px;
+    }
+
+    body.auth-mode main.landing,
+    body.auth-mode .site-footer {
+      display: none;
+    }
+
+    body.auth-mode .dashboard-app {
+      display: block;
+      background: radial-gradient(circle at top, #f4f7ff, #fdfdff 45%, #ffffff 100%);
+    }
+
+    body.auth-mode .nav-public {
+      display: none;
+    }
+
+    body.auth-mode .nav-auth {
+      display: flex;
+    }
+
+    .auth-buttons {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    body.auth-mode .auth-buttons {
+      display: none;
+    }
+
+    body.auth-mode .account-pill {
+      display: inline-flex;
+    }
+
+    .dashboard-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      gap: 24px;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .dashboard-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .dash-card {
+      background: #0d1b34;
+      color: #fff;
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: 0 30px 60px rgba(13, 27, 52, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .dash-card.light {
+      background: #ffffff;
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    #tv_chart {
+      height: 360px;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .chart-fallback {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 18px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.75);
+    }
+
+    .chart-fallback strong {
+      color: #fff;
+    }
+
+    .chart-controls {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chart-controls button {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border-radius: 999px;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+
+    .chart-controls button.active {
+      background: #fff;
+      color: #0d1b34;
+    }
+
+    .profile-stack {
+      background: #f6f8ff;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      padding: 18px;
+      margin-top: 16px;
+    }
+
+    .admin-inline {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .admin-inline input {
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+    }
+
+    .admin-inline button {
+      border: none;
+      border-radius: 999px;
+      padding: 6px 14px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    #profilesList {
+      display: none;
+      margin-top: 12px;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .profile-row {
+      display: flex;
+      justify-content: space-between;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 10px;
+      background: #fff;
+      font-size: 13px;
+    }
+
+    .admin-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(59, 123, 255, 0.25);
+      background: rgba(59, 123, 255, 0.12);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .stats-grid {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 8px 12px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: #f6f8ff;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .stats-grid span:nth-child(2n) {
+      color: var(--muted);
+    }
+
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .auth-toast {
+      font-size: 13px;
+      min-height: 18px;
+      color: var(--accent);
+      margin-top: 8px;
+    }
+
+    @media (max-width: 960px) {
+      .site-header {
+        flex-direction: column;
+        gap: 16px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .cta-group {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .header-actions {
+        flex-direction: column;
+      }
+
+      .language-toggle,
+      .auth-buttons,
+      .account-pill {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="logo-pill">
+      <span id="brandTitle">JKM Trading AI</span>
+      <small id="brandTagline">Automation Desk</small>
+    </div>
+    <nav class="main-nav">
+      <div class="nav-public">
+        <a id="navHome" class="nav-link" href="#home">Нүүр</a>
+        <a id="navFeatures" class="nav-link" href="#features">Онцлог</a>
+        <a id="navHow" class="nav-link" href="#how-it-works">Яаж ажилладаг вэ?</a>
+        <a id="navPricing" class="nav-link" href="#auth">Үнэ төлбөр</a>
+        <a id="navContact" class="nav-link" href="#contact">Холбоо барих</a>
+      </div>
+      <div class="nav-auth">
+        <a id="navDashboard" class="nav-link" href="#dashTop">Самбар</a>
+        <a id="navApproach" class="nav-link" href="#dashControls">Арга барил</a>
+        <a id="navStrategy" class="nav-link" href="#dashSignals">Стратеги</a>
+        <a id="navSettings" class="nav-link" href="#dashMetrics">Тохиргоо</a>
+        <a id="navChartBoard" class="nav-link" href="/chartboard">ChartBoard</a>
+      </div>
+    </nav>
+    <div class="header-actions">
+      <div class="language-toggle">
+        <button class="active" data-lang="mn">MN</button>
+        <button data-lang="en">EN</button>
+      </div>
+      <div class="auth-buttons">
+        <button id="headerLogin" class="ghost-btn" data-scroll="#auth">Нэвтрэх</button>
+        <button id="headerRegister" class="primary-btn" data-scroll="#auth">Бүртгүүлэх</button>
+      </div>
+      <div class="account-pill">
+        <div>
+          <strong id="accountName">Ganbayar</strong>
+          <div id="accountRole" style="font-size:12px; color:var(--muted);">Admin</div>
+        </div>
+        <button id="headerLogout" class="ghost-btn" style="padding:6px 12px;" onclick="logoutUser()">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="landing" id="home">
+    <section class="hero" id="hero">
+      <div class="hero__text">
+        <label id="heroLabel">TRADING AUTOMATION • 24/7 SCAN</label>
+        <h1 id="heroTitle">Таны арилжааны арга барилыг 24/7 скан хийдэг AI туслах.</h1>
+        <h4 id="heroSubtitle">An AI trading assistant that scans the markets with your own strategy.</h4>
+        <p id="heroDesc">JKM AI нь trader хүний өдөр тутмын ажлыг автоматжуулахад зориулагдсан. STR профайлдаа нэг удаа
+          дүрмээ оруулаад, IG Markets API-гаар тасралтгүй хяналт тавьж, тохирсон setup илрэх мөчид Telegram дээр
+          монголоор тайлбартай сигнал ирнэ.</p>
+        <ul>
+          <li id="heroBullet1">• 24/7 автомат скан – зах зээл унтахгүй, харин та амарч болно</li>
+          <li id="heroBullet2">• Таны өөрийн арга барил – random сигнал биш, таны дүрмээр</li>
+          <li id="heroBullet3">• Эмоцигүй, системтэй шийдвэр гаргалт</li>
+        </ul>
+        <div class="cta-group">
+          <button id="heroCtaTelegram" class="primary-btn" data-scroll="#contact">Telegram bot-оор туршиж үзэх</button>
+          <button id="heroCtaRegister" class="ghost-btn" data-scroll="#auth">Үнэгүй бүртгүүлэх</button>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="mini-dashboard">
+          <div>
+            <small style="color:var(--muted);">XAUUSD – Manual analysis</small>
+            <h3 style="margin:6px 0 0;">BUY bias • RR 1:3</h3>
+          </div>
+          <div class="chart-preview"></div>
+          <div style="font-size:14px; color:var(--muted);">
+            Сүүлд илгээсэн сигнал:<br>
+            <strong>BUY @ 2312.50</strong> • SL 2300 • TP 2345 • Telegram дээр chart + тайлбар
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <h2 id="featuresTitle">Трейдер хүнд JKM AI ямар хэрэгтэй вэ?</h2>
+      <h4 id="featuresSubtitle">Why traders use JKM AI</h4>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <strong>01</strong>
+          <h3>Цаг хэмнэлт / Time-saving</h3>
+          <p>Зах зээл 24/7 нээлттэй ч та бүтэн өдөржингөө chart харж суух шаардлагагүй. Bot нь хэдэн арван хосыг танд
+            өөрийн дүрмээр шүүн мэдэгдэнэ.</p>
+        </article>
+        <article class="feature-card">
+          <strong>02</strong>
+          <h3>Дүрэмт арилжаа / Rule-based trading</h3>
+          <p>STR профайл дээрээ trend TF, entry TF, min RR, fibo бүс зэрэг шаардлагаа нэг удаа тохируулна. AI нь
+            эдгээрийг зөрчилгүй мөрдөнө.</p>
+        </article>
+        <article class="feature-card">
+          <strong>03</strong>
+          <h3>Яс тайлбарласан анализ / Clear analysis</h3>
+          <p>Сигнал бүртэй хамт олон timeframe-ийн товч дүгнэлт, chart screenshot, яагаад setup байгаа эсэхийг
+            тайлбарласан текст дагалдана.</p>
+        </article>
+        <article class="feature-card">
+          <strong>04</strong>
+          <h3>Telegram интеграц / Telegram-first</h3>
+          <p>Зөвхөн Telegram ашиглаад сигнал, профайл, командуудаа удирдах боломжтой. Хүсвэл вэб дээрээс дэлгэрэнгүй
+            самбар руу нэвтэрнэ.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="how-it-works">
+      <h2 id="howTitle">Яаж ажилладаг вэ?</h2>
+      <h4 id="howSubtitle">4 алхамт автоматжуулалт</h4>
+      <div class="steps-grid">
+        <article class="step-card">
+          <span>1</span>
+          <h3>Профайл үүсгэх</h3>
+          <p>Нэр, арга барил, min RR, risk %, timeframe гэх мэт STR мэдээллээ оруулаад JSON профайл болгож хадгалуулна.
+          </p>
+        </article>
+        <article class="step-card">
+          <span>2</span>
+          <h3>Арга барилаа AI-д ойлгуулна</h3>
+          <p>STR текст, жишээ зургаас AI үндсэн дүрмийг гаргаж, trend, entry, SL/TP тавих логикийг ойлгож авна.</p>
+        </article>
+        <article class="step-card">
+          <span>3</span>
+          <h3>24/7 зах зээл скан</h3>
+          <p>IG Markets API-гаар D1, H4, H1, M15 timeframe лаануудыг татаж engine_blocks дээр шүүж тохирох setup хайна.
+          </p>
+        </article>
+        <article class="step-card">
+          <span>4</span>
+          <h3>Сигнал авч шийдвэр гаргана</h3>
+          <p>Setup илэрвэл Telegram дээр монголоор тайлбартай сигнал ирж, та хүний шийдвэрээ нэмээд арилжаа хийнэ.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section auth-grid" id="auth">
+      <article class="auth-card">
+        <div class="auth-tabs">
+          <button id="loginTab" class="active" onclick="setActiveAuthTab('login')">Нэвтрэх / Login</button>
+          <button id="registerTab" onclick="setActiveAuthTab('register')">Бүртгүүлэх / Register</button>
+        </div>
+        <form id="loginForm" onsubmit="handleAuthSubmit(event, 'login')">
+          <div class="form-field">
+            <label id="loginEmailLabel">Имэйл / Email</label>
+            <input id="loginEmail" type="email" placeholder="name@example.com" required>
+          </div>
+          <div class="form-field">
+            <label id="loginPasswordLabel">Нууц үг / Password</label>
+            <input id="loginPassword" type="password" placeholder="••••••••" required>
+          </div>
+          <div class="form-footer">
+            <label style="display:flex; gap:6px; align-items:center;">
+              <input type="checkbox" checked>
+              <span id="loginRemember">Системд нэвтэрсэн хэвээр байя</span>
+            </label>
+            <a id="loginForgot" href="#">Нууц үг мартсан?</a>
+          </div>
+          <button id="loginSubmit" class="primary-btn" type="submit" style="width:100%;">Нэвтрэх / Sign in</button>
+        </form>
+        <form id="registerForm" style="display:none;" onsubmit="handleAuthSubmit(event, 'register')">
+          <div class="form-field">
+            <label id="registerNameLabel">Нэр / Full name</label>
+            <input id="registerName" type="text" placeholder="Ganbayar" required>
+          </div>
+          <div class="form-field">
+            <label id="registerEmailLabel">Имэйл / Email</label>
+            <input id="registerEmail" type="email" placeholder="name@example.com" required>
+          </div>
+          <div class="form-field">
+            <label id="registerPasswordLabel">Нууц үг / Password</label>
+            <input id="registerPassword" type="password" required>
+          </div>
+          <div class="form-field">
+            <label id="registerConfirmLabel">Нууц үг давтах / Confirm password</label>
+            <input id="registerPasswordConfirm" type="password" required>
+          </div>
+          <label id="registerTerms"
+            style="display:flex; gap:6px; font-size:13px; color:var(--muted); margin-bottom:16px;">
+            <input type="checkbox" required>
+            Үйлчилгээний нөхцөл зөвшөөрч байна
+          </label>
+          <button id="registerSubmit" class="primary-btn" type="submit" style="width:100%;">Бүртгүүлэх / Create
+            account</button>
+
+          <div id="registerVerifySection" style="display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+            <div class="form-field">
+              <label id="verifyCodeLabel">Verify код (6 оронтой)</label>
+              <input id="verifyCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456">
+            </div>
+            <button id="verifyCodeSubmit" class="primary-btn" type="button" style="width:100%;">Кодоор баталгаажуулах</button>
+            <button id="registerResendVerify" class="ghost-btn" type="button" style="width:100%; margin-top:10px;">Verify имэйл дахин явуулах</button>
+          </div>
+        </form>
+        <div id="authStatus" class="auth-toast"></div>
+      </article>
+      <article class="contact-card" id="contact">
+        <h3 id="contactTitle">Telegram дээрээс шууд туршиж үзэх</h3>
+        <p id="contactDesc">JKM Trading AI bot-ыг Telegram дээрээс шууд эхлүүлээд demo account дээр сигнал туршаарай.
+          Асуулт байвал чат бичихэд хангалттай.</p>
+        <div class="contact-row"><span id="contactTelegramLabel">Telegram:</span> <a id="contactTelegram" href="#"
+            target="_blank">@your_username</a></div>
+        <div class="contact-row"><span id="contactEmailLabel">Email:</span> <a id="contactEmail"
+            href="mailto:support@yourdomain.com">support@yourdomain.com</a></div>
+        <button id="contactButton" class="primary-btn">Start Telegram Bot</button>
+        <p id="contactHint" style="font-size:13px; color:var(--muted); text-align:center;">Нээхэд Telegram app
+          автоматаар ажиллана.</p>
+      </article>
+    </section>
+  </main>
+
+  <section id="dashboardApp" class="dashboard-app">
+    <div class="dashboard-shell">
+      <div id="dashTop" class="dashboard-topbar">
+        <div>
+          <p style="letter-spacing:0.2em; font-size:12px; color:var(--muted); text-transform:uppercase; margin:0;">Live
+            control</p>
+          <h2 style="margin:4px 0 0;">JKM AI Dashboard</h2>
+        </div>
+      </div>
+      <div class="dashboard-grid">
+        <article id="dashControls" class="dash-card light">
+          <div>
+            <p style="text-transform:uppercase; letter-spacing:0.2em; font-size:12px; color:var(--muted); margin:0;">
+              Manual analysis</p>
+            <h3 style="margin:6px 0 0;">Хослол удирдлага</h3>
+          </div>
+          <label class="form-field" style="margin-top:16px;">
+            <span>Анализ хийх хос / Pair</span>
+            <select id="pairSelect">
+              <option value="XAUUSD">XAUUSD</option>
+              <option value="USDJPY">USDJPY</option>
+              <option value="GBPJPY">GBPJPY</option>
+              <option value="USDCHF">USDCHF</option>
+              <option value="NAS100">NAS100</option>
+              <option value="SP500">SP500</option>
+              <option value="BITCOIN">BITCOIN</option>
+            </select>
+          </label>
+          <p id="profileSummary" style="min-height:20px; font-size:14px; color:var(--muted);"></p>
+          <div id="setupStats" class="stats-grid">
+            <span>Статус</span><span>Сетап илрээгүй</span>
+            <span>Хос</span><span>—</span>
+            <span>Entry / SL / TP</span><span>—</span>
+            <span>RR</span><span>—</span>
+          </div>
+          <div style="font-size:12px; color:var(--muted);">Сүүлд шинэчлэгдсэн: <span id="setupUpdatedAt">—</span></div>
+          <div class="cta-group" style="margin-top:16px;">
+            <button class="primary-btn" onclick="refreshStr()">STR шинжилгээ</button>
+            <button class="ghost-btn" onclick="refreshTech()">Техник шинжилгээ</button>
+            <button class="ghost-btn" onclick="refreshMacro()">Макро шинжилгээ</button>
+          </div>
+          <div class="profile-stack">
+            <strong>Профайл удирдлага</strong>
+            <div class="admin-inline" id="adminBanner">
+              <span id="adminStatus" class="admin-pill" style="display:none;">Админ горим</span>
+              <span id="adminHint" style="font-size:13px; color:var(--muted);">Админ эрхтэй хэрэглэгчид бүх профайлыг
+                удирдана.</span>
+            </div>
+            <form id="profileForm" style="display:none;">
+              <div class="form-field">
+                <label>Профайлын нэр</label>
+                <input type="text" id="profileName" placeholder="XAUUSD breakout">
+              </div>
+              <div class="form-field">
+                <label>Тэмдэглэл (Risk/Strategy)</label>
+                <input type="text" id="profileNote" placeholder="RR, оролтын дүрэм">
+              </div>
+              <div class="form-field">
+                <label>Timezone (UTC offset)</label>
+                <input type="number" id="profileTzOffset" placeholder="8" min="-12" max="14" step="1">
+              </div>
+              <button type="button" class="primary-btn" style="width:100%;" onclick="saveProfile()">Профайл
+                хадгалах</button>
+            </form>
+            <div id="profilesList"></div>
+            <div id="validationMsg" class="auth-toast"></div>
+            <div id="traderTip" style="font-size:12px; color:var(--muted);">AI тайлбар нь хүний шийдвэрийг солихгүй.
+              Risk менежментээ үргэлж мөрдөөрэй.</div>
+          </div>
+        </article>
+        <article id="dashChart" class="dash-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <p
+                style="letter-spacing:0.2em; font-size:12px; text-transform:uppercase; margin:0; color:rgba(255,255,255,0.7);">
+                Live chart</p>
+              <h3>IG Streaming Chart</h3>
+            </div>
+            <span style="font-size:12px; color:rgba(255,255,255,0.7);">Сүүлд шинэчлэгдсэн: <strong
+                id="lastUpdateLabel">—</strong></span>
+          </div>
+          <div id="tv_chart"></div>
+          <div class="chart-controls">
+            <span style="color:rgba(255,255,255,0.7);">Timeframe:</span>
+            <button type="button" class="active" data-resolution="15"
+              onclick="setChartResolution('15', this)">15М</button>
+            <button type="button" data-resolution="60" onclick="setChartResolution('60', this)">1Ц</button>
+            <button type="button" data-resolution="240" onclick="setChartResolution('240', this)">4Ц</button>
+            <button type="button" data-resolution="D" onclick="setChartResolution('D', this)">Өдөр</button>
+          </div>
+          <p style="font-size:12px; color:rgba(255,255,255,0.7);">IG mid price-тэй уялдсан тул график нь зөвхөн
+            шийдвэрийн reference зорилгоор ашиглагдана.</p>
+        </article>
+        <article id="dashSignals" class="dash-card light">
+          <div>
+            <p style="letter-spacing:0.2em; font-size:12px; text-transform:uppercase; color:var(--muted); margin:0;">
+              Trading signals</p>
+            <h3>AI тайлбар</h3>
+          </div>
+          <pre id="aiOutput"
+            style="white-space:pre-wrap; font-family:'Inter',sans-serif; font-size:14px; background:#f6f8ff; padding:16px; border-radius:18px; border:1px solid var(--border); min-height:220px;">Хосоо сонгоод шинжилгээг ажиллуулна уу.</pre>
+          <ul
+            style="list-style:none; padding:0; margin:16px 0 0; color:var(--muted); font-size:13px; display:flex; flex-direction:column; gap:8px;">
+            <li>⚡ STR шалгуур биелсэн эсэх</li>
+            <li>🎯 RR 2.0-аас дээш эсэх</li>
+            <li>🛡️ Risk free боломж байгаа эсэх</li>
+            <li>🧠 Macro сэтгэгдэл тохирч буй эсэх</li>
+          </ul>
+        </article>
+      </div>
+      <section id="dashMetrics" class="metric-strip">
+        <div class="feature-card">
+          <span class="muted">Active Trades</span>
+          <h3>5</h3>
+        </div>
+        <div class="feature-card">
+          <span class="muted">Total Profit</span>
+          <h3>$4,530</h3>
+        </div>
+        <div class="feature-card">
+          <span class="muted">Win Rate</span>
+          <h3 id="winRateValue">—</h3>
+        </div>
+        <div class="feature-card">
+          <span class="muted">Balance</span>
+          <h3>$12,750</h3>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div>© 2025 JKM Trading AI – All rights reserved.</div>
+    <nav>
+      <a href="#">Privacy Policy</a>
+      <a href="#">Terms</a>
+      <a href="#">Risk disclosure</a>
+    </nav>
+  </footer>
+
+  <script>
+    const TOKEN_STORAGE_KEY = 'jkm_ai_session_v1';
+    const SESSION_EXPIRED = 'SESSION_EXPIRED';
+    const LANGUAGE_STORAGE_KEY = 'jkm_ai_lang_v1';
+    const TRADINGVIEW_SRC = 'https://s3.tradingview.com/tv.js';
+    let authToken = localStorage.getItem(TOKEN_STORAGE_KEY) || null;
+    let currentUser = null;
+    let tvWidget = null;
+    let chartReady = false;
+    let currentResolution = '15';
+    let bannerTimer = null;
+    let dashboardBootstrapped = false;
+    let chartLoadSeq = 0;
+    let contactTelegramUrl = null;
+    let contactEmailAddress = null;
+    let currentLang = (localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'mn').toLowerCase();
+
+    const I18N = {
+      mn: {
+        navHome: 'Нүүр',
+        navFeatures: 'Онцлог',
+        navHow: 'Яаж ажилладаг вэ?',
+        navPricing: 'Үнэ төлбөр',
+        navContact: 'Холбоо барих',
+        navDashboard: 'Самбар',
+        navApproach: 'Арга барил',
+        navStrategy: 'Стратеги',
+        navSettings: 'Тохиргоо',
+        headerLogin: 'Нэвтрэх',
+        headerRegister: 'Бүртгүүлэх',
+        headerLogout: 'Гарах',
+        heroLabel: 'TRADING AUTOMATION • 24/7 SCAN',
+        heroTitle: 'Таны арилжааны арга барилыг 24/7 скан хийдэг AI туслах.',
+        heroSubtitle: 'An AI trading assistant that scans the markets with your own strategy.',
+        heroDesc: 'JKM AI нь trader хүний өдөр тутмын ажлыг автоматжуулахад зориулагдсан. STR профайлдаа нэг удаа дүрмээ оруулаад, IG Markets API-гаар тасралтгүй хяналт тавьж, тохирсон setup илрэх мөчид Telegram дээр монголоор тайлбартай сигнал ирнэ.',
+        heroBullet1: '• 24/7 автомат скан – зах зээл унтахгүй, харин та амарч болно',
+        heroBullet2: '• Таны өөрийн арга барил – random сигнал биш, таны дүрмээр',
+        heroBullet3: '• Эмоцигүй, системтэй шийдвэр гаргалт',
+        heroCtaTelegram: 'Telegram bot-оор туршиж үзэх',
+        heroCtaRegister: 'Үнэгүй бүртгүүлэх',
+        featuresTitle: 'Трейдер хүнд JKM AI ямар хэрэгтэй вэ?',
+        featuresSubtitle: 'Why traders use JKM AI',
+        howTitle: 'Яаж ажилладаг вэ?',
+        howSubtitle: '4 алхамт автоматжуулалт',
+        loginTab: 'Нэвтрэх / Login',
+        registerTab: 'Бүртгүүлэх / Register',
+        loginEmailLabel: 'Имэйл / Email',
+        loginPasswordLabel: 'Нууц үг / Password',
+        loginRemember: 'Системд нэвтэрсэн хэвээр байя',
+        loginForgot: 'Нууц үг мартсан?',
+        loginSubmit: 'Нэвтрэх / Sign in',
+        registerResendVerify: 'Verify имэйл дахин явуулах',
+        verifyCodeLabel: 'Verify код (6 оронтой)',
+        verifyCodeSubmit: 'Кодоор баталгаажуулах',
+        registerNameLabel: 'Нэр / Full name',
+        registerEmailLabel: 'Имэйл / Email',
+        registerPasswordLabel: 'Нууц үг / Password',
+        registerConfirmLabel: 'Нууц үг давтах / Confirm password',
+        registerTerms: 'Үйлчилгээний нөхцөл зөвшөөрч байна',
+        registerSubmit: 'Бүртгүүлэх / Create account',
+        contactTitle: 'Telegram дээрээс шууд туршиж үзэх',
+        contactDesc: 'JKM Trading AI bot-ыг Telegram дээрээс шууд эхлүүлээд demo account дээр сигнал туршаарай. Асуулт байвал чат бичихэд хангалттай.',
+        contactTelegramLabel: 'Telegram:',
+        contactEmailLabel: 'Email:',
+        contactButton: 'Start Telegram Bot',
+        contactHint: 'Нээхэд Telegram app автоматаар ажиллана.'
+      },
+      en: {
+        navHome: 'Home',
+        navFeatures: 'Features',
+        navHow: 'How it works',
+        navPricing: 'Pricing',
+        navContact: 'Contact',
+        navDashboard: 'Dashboard',
+        navApproach: 'Approach',
+        navStrategy: 'Strategy',
+        navSettings: 'Settings',
+        headerLogin: 'Sign in',
+        headerRegister: 'Create account',
+        headerLogout: 'Log out',
+        heroLabel: 'TRADING AUTOMATION • 24/7 SCAN',
+        heroTitle: 'An AI assistant that scans your trading strategy 24/7.',
+        heroSubtitle: 'An AI trading assistant that scans the markets with your own strategy.',
+        heroDesc: 'JKM AI helps automate a trader’s daily workflow. Define your rules once, then the system monitors markets continuously and notifies you when a setup appears.',
+        heroBullet1: '• 24/7 scanning — markets don’t sleep, you can',
+        heroBullet2: '• Your own approach — not random signals',
+        heroBullet3: '• Systematic decision-making, less emotion',
+        heroCtaTelegram: 'Try via Telegram bot',
+        heroCtaRegister: 'Free sign up',
+        featuresTitle: 'Why JKM AI is useful for traders',
+        featuresSubtitle: 'Why traders use JKM AI',
+        howTitle: 'How it works',
+        howSubtitle: 'Automation in 4 steps',
+        loginTab: 'Sign in',
+        registerTab: 'Register',
+        loginEmailLabel: 'Email',
+        loginPasswordLabel: 'Password',
+        loginRemember: 'Keep me signed in',
+        loginForgot: 'Forgot password?',
+        loginSubmit: 'Sign in',
+        registerResendVerify: 'Resend verification email',
+        verifyCodeLabel: 'Verification code (6 digits)',
+        verifyCodeSubmit: 'Verify code',
+        registerNameLabel: 'Full name',
+        registerEmailLabel: 'Email',
+        registerPasswordLabel: 'Password',
+        registerConfirmLabel: 'Confirm password',
+        registerTerms: 'I agree to the Terms of Service',
+        registerSubmit: 'Create account',
+        contactTitle: 'Try it on Telegram',
+        contactDesc: 'Open the JKM Trading AI bot on Telegram and try it on a demo account. Message us anytime if you have questions.',
+        contactTelegramLabel: 'Telegram:',
+        contactEmailLabel: 'Email:',
+        contactButton: 'Open Telegram bot',
+        contactHint: 'Telegram will open in a new tab.'
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', initApp);
+
+    function initApp() {
+      updateHeaderAuthState();
+      updateAdminUI();
+      bindScrollButtons();
+      bindLanguageToggle();
+      bindContactButton();
+      bindAuthHelpers();
+      loadContactInfo();
+      applyLanguage(currentLang);
+      if (authToken) {
+        resumeSession();
+      }
+    }
+
+    function bindAuthHelpers() {
+      const forgot = document.getElementById('loginForgot');
+      if (forgot) {
+        forgot.addEventListener('click', (e) => {
+          e.preventDefault();
+          setAuthStatus('Нууц үг сэргээх функц одоогоор байхгүй. Support/Telegram дээр холбоо барина уу.', 'info');
+        });
+      }
+
+      const resendBtn = document.getElementById('registerResendVerify');
+      if (resendBtn) {
+        resendBtn.addEventListener('click', async () => {
+          const email = (document.getElementById('registerEmail')?.value || '').trim();
+          if (!email) {
+            setAuthStatus('Эхлээд имэйлээ оруулна уу.', 'error');
+            return;
+          }
+          await resendVerification(email);
+        });
+      }
+
+      const verifyBtn = document.getElementById('verifyCodeSubmit');
+      if (verifyBtn) {
+        verifyBtn.addEventListener('click', async () => {
+          const email = (document.getElementById('registerEmail')?.value || '').trim();
+          const code = (document.getElementById('verifyCode')?.value || '').trim();
+          if (!email) {
+            setAuthStatus('Эхлээд имэйлээ оруулна уу.', 'error');
+            return;
+          }
+          if (!code) {
+            setAuthStatus('Verify кодоо оруулна уу.', 'error');
+            return;
+          }
+          await verifyWithCode(email, code);
+        });
+      }
+    }
+
+    async function resendVerification(email) {
+      setAuthStatus('Verify имэйл дахин явуулж байна...');
+      try {
+        const res = await fetch('/api/auth/resend-verification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: (email || '').trim(), password: 'ignored' }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const msg = (data && (data.detail || data.message || data.error)) || 'Verify имэйл дахин явууллаа. Inbox/Spam шалгана уу.';
+        if (!res.ok) throw new Error(msg);
+        const suffix = (data && data.dev_code) ? ` (DEV code: ${data.dev_code})` : '';
+        setAuthStatus(`${msg}${suffix}`, 'success');
+      } catch (e) {
+        setAuthStatus(`⚠️ ${e.message}`, 'error');
+      }
+    }
+
+    async function verifyWithCode(email, code) {
+      setAuthStatus('Кодоор баталгаажуулж байна...');
+      try {
+        const res = await fetch('/api/auth/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: (email || '').trim(), code: (code || '').trim() }),
+        });
+        if (!res.ok) {
+          const msg = await extractErrorMessage(res, 'Код буруу эсвэл хугацаа дууссан байна.');
+          throw new Error(msg);
+        }
+        const data = await res.json();
+        handleAuthSuccess(data.user, data.token, { statusMessage: 'Имэйл баталгаажлаа. Самбар руу шилжиж байна...' });
+      } catch (e) {
+        setAuthStatus(`⚠️ ${e.message}`, 'error');
+      }
+    }
+
+    function bindScrollButtons() {
+      document.querySelectorAll('[data-scroll]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const target = document.querySelector(btn.dataset.scroll);
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        });
+      });
+    }
+
+    function bindLanguageToggle() {
+      document.querySelectorAll('.language-toggle button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const lang = (btn.dataset.lang || 'mn').toLowerCase();
+          setLanguage(lang);
+        });
+      });
+    }
+
+    function setLanguage(lang) {
+      currentLang = (lang || 'mn').toLowerCase();
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLang);
+      document.querySelectorAll('.language-toggle button').forEach(b => {
+        b.classList.toggle('active', (b.dataset.lang || '').toLowerCase() === currentLang);
+      });
+      applyLanguage(currentLang);
+    }
+
+    function applyLanguage(lang) {
+      const table = I18N[(lang || 'mn').toLowerCase()] || I18N.mn;
+      document.documentElement.lang = (lang || 'mn').toLowerCase();
+      Object.keys(table).forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = table[id];
+      });
+    }
+
+    function bindContactButton() {
+      const btn = document.getElementById('contactButton');
+      if (!btn) return;
+      btn.type = 'button';
+      btn.addEventListener('click', () => {
+        if (contactTelegramUrl) {
+          window.open(contactTelegramUrl, '_blank');
+        } else {
+          showBanner('Telegram холбоос түр олдсонгүй.', 'error');
+        }
+      });
+    }
+
+    async function loadContactInfo() {
+      try {
+        const res = await fetch('/api/contact');
+        if (!res.ok) return;
+        const data = await res.json();
+        contactTelegramUrl = data.telegram_url || contactTelegramUrl;
+        contactEmailAddress = data.support_email || contactEmailAddress;
+        const telegramEl = document.getElementById('contactTelegram');
+        if (telegramEl && contactTelegramUrl) {
+          telegramEl.href = contactTelegramUrl;
+          telegramEl.textContent = formatTelegramHandle(contactTelegramUrl);
+        }
+        const emailEl = document.getElementById('contactEmail');
+        if (emailEl && contactEmailAddress) {
+          emailEl.href = `mailto:${contactEmailAddress}`;
+          emailEl.textContent = contactEmailAddress;
+        }
+      } catch (err) {
+        console.warn('Contact info load error:', err);
+      }
+    }
+
+    function formatTelegramHandle(url) {
+      if (!url) return '';
+      const clean = url.replace(/^https?:\/\/t\.me\//i, '');
+      if (!clean) return url;
+      return clean.startsWith('@') ? clean : `@${clean}`;
+    }
+
+    function setActiveAuthTab(mode) {
+      const loginTab = document.getElementById('loginTab');
+      const registerTab = document.getElementById('registerTab');
+      const loginForm = document.getElementById('loginForm');
+      const registerForm = document.getElementById('registerForm');
+      if (!loginTab || !registerTab || !loginForm || !registerForm) return;
+      if (mode === 'login') {
+        loginTab.classList.add('active');
+        registerTab.classList.remove('active');
+        loginForm.style.display = 'block';
+        registerForm.style.display = 'none';
+      } else {
+        loginTab.classList.remove('active');
+        registerTab.classList.add('active');
+        loginForm.style.display = 'none';
+        registerForm.style.display = 'block';
+      }
+    }
+
+    async function resumeSession() {
+      try {
+        const res = await apiFetch('/api/auth/me');
+        if (!res.ok) throw new Error('Session invalid');
+        const data = await res.json();
+        handleAuthSuccess(data.user, authToken, { silent: true });
+      } catch (err) {
+        if (!isSessionExpiredError(err)) {
+          console.warn('Session resume failed:', err);
+        }
+        clearSession(true);
+      }
+    }
+
+    async function handleAuthSubmit(event, mode) {
+      event.preventDefault();
+      if (mode === 'register') {
+        const payload = {
+          name: document.getElementById('registerName')?.value.trim() || 'Trader',
+          email: (document.getElementById('registerEmail')?.value || '').trim(),
+          password: document.getElementById('registerPassword')?.value || '',
+        };
+        const confirmPassword = document.getElementById('registerPasswordConfirm')?.value || '';
+        if (!payload.email) {
+          setAuthStatus('Имэйлээ оруулна уу.', 'error');
+          return;
+        }
+        if (payload.password.length < 8) {
+          setAuthStatus('Нууц үг хамгийн багадаа 8 тэмдэгт байна.', 'error');
+          return;
+        }
+        if (payload.password !== confirmPassword) {
+          setAuthStatus('Нууц үг хоёр хоорондоо таарахгүй байна.', 'error');
+          return;
+        }
+        setAuthStatus('Бүртгүүлж байна...');
+        try {
+          const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const msg = await extractErrorMessage(res, 'Бүртгэл амжилтгүй боллоо.');
+            throw new Error(msg);
+          }
+          const data = await res.json().catch(() => ({}));
+          setActiveAuthTab('register');
+          const verifySection = document.getElementById('registerVerifySection');
+          if (verifySection) verifySection.style.display = 'block';
+          const verifyCode = document.getElementById('verifyCode');
+          if (verifyCode) verifyCode.value = '';
+          if (verifyCode) verifyCode.focus();
+          const suffix = (data && data.dev_code) ? ` (DEV code: ${data.dev_code})` : '';
+          setAuthStatus(`Имэйл рүү 6 оронтой verify код явууллаа. Кодоо оруулаад "Кодоор баталгаажуулах" дээр дарна уу.${suffix}`, 'success');
+        } catch (err) {
+          setAuthStatus(`⚠️ ${err.message}`, 'error');
+        }
+        return;
+      }
+
+      const email = (document.getElementById('loginEmail')?.value || '').trim();
+      const password = document.getElementById('loginPassword')?.value || '';
+      if (!email || !password) {
+        setAuthStatus('Имэйл болон нууц үгээ бөглөнө үү.', 'error');
+        return;
+      }
+      setAuthStatus('Нэвтэрч байна...');
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!res.ok) {
+          const msg = await extractErrorMessage(res, 'Нэвтрэхэд алдаа гарлаа.');
+          throw new Error(msg);
+        }
+        const data = await res.json();
+        handleAuthSuccess(data.user, data.token, { statusMessage: 'Амжилттай нэвтэрлээ. Самбар руу шилжиж байна...' });
+      } catch (err) {
+        const raw = String(err.message || '');
+        setAuthStatus(`⚠️ ${raw}`, 'error');
+      }
+    }
+
+    async function extractErrorMessage(response, fallback) {
+      try {
+        const data = await response.json();
+        if (!data) return fallback;
+        if (typeof data === 'string') return data;
+        if (data.detail) return data.detail;
+        if (data.error) return data.error;
+        if (data.message) return data.message;
+      } catch (err) {
+        return fallback;
+      }
+      return fallback;
+    }
+
+    function handleAuthSuccess(user, token, options = {}) {
+      const { silent = false, statusMessage } = options;
+      currentUser = user;
+      authToken = token;
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      updateHeaderAuthState();
+      updateAdminUI();
+      if (user && user.email_verified === false) {
+        setAuthStatus('Нэвтэрлээ. Анхаар: имэйл баталгаажаагүй байна (хүсвэл verify code оруулаад баталгаажуулж болно).', 'info');
+      } else {
+        setAuthStatus(statusMessage || '', statusMessage ? 'success' : 'info');
+      }
+      showDashboard({ silent });
+    }
+
+    function showDashboard({ silent = false } = {}) {
+      if (!currentUser) return;
+      document.body.classList.add('auth-mode');
+      if (!dashboardBootstrapped) {
+        bootstrapDashboard();
+      } else {
+        refreshStr();
+        loadProfile();
+        refreshMetrics();
+        updateAdminUI();
+      }
+      if (!silent) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+
+    function bootstrapDashboard() {
+      updateSetupStats(null, null);
+      initPairs();
+      loadProfile();
+      refreshMetrics();
+      updateAdminUI();
+      dashboardBootstrapped = true;
+    }
+
+    async function refreshMetrics() {
+      if (!assertAuthenticated(false)) return;
+      const winEl = document.getElementById('winRateValue');
+      if (winEl) winEl.textContent = '—';
+      try {
+        const res = await apiFetch('/api/metrics');
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        const data = await res.json();
+        if (data && typeof data.winrate === 'number' && winEl) {
+          winEl.textContent = `${data.winrate.toFixed(1)}%`;
+        }
+      } catch (err) {
+        if (winEl) winEl.textContent = '—';
+      }
+    }
+
+    async function logoutUser() {
+      if (authToken) {
+        try {
+          await apiFetch('/api/auth/logout', { method: 'POST' });
+        } catch (err) {
+          if (!isSessionExpiredError(err)) {
+            console.warn('Logout error:', err);
+          }
+        }
+      }
+      clearSession();
+    }
+
+    function clearSession(silent = false) {
+      authToken = null;
+      currentUser = null;
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      document.body.classList.remove('auth-mode');
+      updateHeaderAuthState();
+      updateAdminUI();
+      const summary = document.getElementById('profileSummary');
+      if (summary) summary.textContent = '';
+      const nameInput = document.getElementById('profileName');
+      if (nameInput) nameInput.value = '';
+      const noteInput = document.getElementById('profileNote');
+      if (noteInput) noteInput.value = '';
+      updateSetupStats(null, null);
+      if (!silent) {
+        setAuthStatus('');
+      }
+      dashboardBootstrapped = false;
+    }
+
+    function updateHeaderAuthState() {
+      const authButtons = document.querySelector('.auth-buttons');
+      const accountPill = document.querySelector('.account-pill');
+      if (currentUser) {
+        if (authButtons) authButtons.style.display = 'none';
+        if (accountPill) accountPill.style.display = 'inline-flex';
+        const nameEl = document.getElementById('accountName');
+        const roleEl = document.getElementById('accountRole');
+        if (nameEl) nameEl.textContent = currentUser.name || 'Trader';
+        if (roleEl) roleEl.textContent = currentUser.is_admin ? 'Admin' : 'Member';
+      } else {
+        if (authButtons) authButtons.style.display = 'flex';
+        if (accountPill) accountPill.style.display = 'none';
+      }
+    }
+
+    function updateAdminUI() {
+      const isAdmin = Boolean(currentUser && currentUser.is_admin);
+      const adminStatus = document.getElementById('adminStatus');
+      const adminHint = document.getElementById('adminHint');
+      const profilesList = document.getElementById('profilesList');
+      const profileForm = document.getElementById('profileForm');
+      if (profileForm) {
+        profileForm.style.display = currentUser ? 'block' : 'none';
+      }
+      if (!adminStatus || !adminHint || !profilesList) return;
+      if (isAdmin) {
+        adminStatus.style.display = 'inline-flex';
+        adminHint.textContent = 'Админ хэрэглэгч бусад профайлыг удирдах боломжтой.';
+        profilesList.style.display = 'flex';
+        loadProfiles();
+      } else {
+        adminStatus.style.display = 'none';
+        adminHint.textContent = currentUser ? 'Өөрийн STR профайлаа доороос шинэчилнэ үү.' : 'Нэвтэрсний дараа профайлаа удирдана.';
+        profilesList.style.display = 'none';
+        profilesList.innerHTML = '';
+      }
+    }
+
+    function assertAuthenticated(showWarning = true) {
+      if (!authToken) {
+        if (showWarning) showBanner('Энэ үйлдлийг хийхийн тулд нэвтэрнэ үү.');
+        return false;
+      }
+      return true;
+    }
+
+    async function apiFetch(url, options = {}) {
+      const opts = { ...options };
+      const headers = new Headers(options.headers || {});
+      if (authToken) {
+        headers.set('Authorization', `Bearer ${authToken}`);
+      }
+      opts.headers = headers;
+      const response = await fetch(url, opts);
+      if (response.status === 401) {
+        clearSession(true);
+        throw new Error(SESSION_EXPIRED);
+      }
+      return response;
+    }
+
+    function isSessionExpiredError(err) {
+      return err && err.message === SESSION_EXPIRED;
+    }
+
+    function setAuthStatus(message, type = 'info') {
+      const el = document.getElementById('authStatus');
+      if (!el) return;
+      el.style.color = type === 'error' ? '#d14343' : varColor('--accent');
+      el.textContent = message || '';
+    }
+
+    function formatPairLabel(symbol) {
+      if (!symbol) return '—';
+      if (symbol.includes('/')) return symbol;
+      if (symbol.length === 6) {
+        return `${symbol.slice(0, 3)}/${symbol.slice(3)}`;
+      }
+      return symbol;
+    }
+
+    function varColor(token) {
+      const value = getComputedStyle(document.documentElement).getPropertyValue(token);
+      return value && value.trim() ? value.trim() : '#3b7bff';
+    }
+
+    function showBanner(message = '', type = 'error') {
+      const el = document.getElementById('validationMsg');
+      if (!el) return;
+      el.style.color = type === 'success' ? varColor('--accent') : '#d14343';
+      el.textContent = message || '';
+      if (bannerTimer) clearTimeout(bannerTimer);
+      if (message) {
+        bannerTimer = setTimeout(() => {
+          el.textContent = '';
+        }, 3500);
+      }
+    }
+
+    function formatLevel(value) {
+      const num = Number(value);
+      return Number.isFinite(num) ? num.toFixed(5) : (value ?? '—');
+    }
+
+    function formatProfileSummary(profile) {
+      if (!profile || typeof profile !== 'object') return '';
+      const pieces = [];
+      if (profile.trend_tf) pieces.push(`Тренд TF: ${profile.trend_tf}`);
+      if (profile.entry_tf) pieces.push(`Entry TF: ${profile.entry_tf}`);
+      if (profile.min_rr) pieces.push(`RR ≥ ${profile.min_rr}`);
+      if (profile.tz_offset_hours !== undefined && profile.tz_offset_hours !== null) {
+        const tz = Number(profile.tz_offset_hours);
+        if (Number.isFinite(tz)) pieces.push(`Timezone: UTC${tz >= 0 ? '+' : ''}${tz}`);
+      }
+      if (profile.note) pieces.push(profile.note);
+      return `${profile.name || 'Нэргүй профайл'}${pieces.length ? ' • ' + pieces.join(' • ') : ''}`;
+    }
+
+    function markLastUpdate() {
+      const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      const chartLabel = document.getElementById('lastUpdateLabel');
+      const setupLabel = document.getElementById('setupUpdatedAt');
+      if (chartLabel) chartLabel.textContent = ts;
+      if (setupLabel) setupLabel.textContent = ts;
+    }
+
+    function updateSetupStats(setup, pair) {
+      const panel = document.getElementById('setupStats');
+      if (!panel) return;
+      if (!setup) {
+        panel.innerHTML = `
+          <span>Статус</span><span>Сетап илрээгүй</span>
+          <span>Хос</span><span>—</span>
+          <span>Entry / SL / TP</span><span>—</span>
+          <span>RR</span><span>—</span>
+        `;
+        panel.dataset.hasSetup = 'false';
+        panel.dataset.entry = '';
+        panel.dataset.sl = '';
+        panel.dataset.tp = '';
+        panel.dataset.direction = '';
+        panel.dataset.pair = '';
+        return;
+      }
+      const rrValue = Number(setup.rr);
+      panel.innerHTML = `
+        <span>Статус</span><span>✅ Сетап бэлэн</span>
+        <span>Хос</span><span>${formatPairLabel(pair || setup.pair)}</span>
+        <span>Чиглэл</span><span>${setup.direction || '—'}</span>
+        <span>Entry / SL / TP</span><span>${formatLevel(setup.entry)} / ${formatLevel(setup.sl)} / ${formatLevel(setup.tp)}</span>
+        <span>RR</span><span>${Number.isFinite(rrValue) ? rrValue.toFixed(2) : '—'}</span>
+      `;
+      panel.dataset.hasSetup = 'true';
+      panel.dataset.entry = setup.entry ?? '';
+      panel.dataset.sl = setup.sl ?? '';
+      panel.dataset.tp = setup.tp ?? '';
+      panel.dataset.direction = setup.direction ?? '';
+      panel.dataset.pair = pair || setup.pair || '';
+    }
+
+    async function copySetupLevels() {
+      const panel = document.getElementById('setupStats');
+      if (!panel || panel.dataset.hasSetup !== 'true') {
+        showBanner('⚠️ Одоогоор идэвхтэй сетап алга.', 'error');
+        return;
+      }
+      const text = `Pair: ${panel.dataset.pair}\nDirection: ${panel.dataset.direction}\nEntry: ${panel.dataset.entry}\nSL: ${panel.dataset.sl}\nTP: ${panel.dataset.tp}`;
+      try {
+        await navigator.clipboard.writeText(text);
+        showBanner('✅ Level-ууд clipboard руу хууллаа.', 'success');
+      } catch (err) {
+        showBanner(`⚠️ Clipboard алдаа: ${err.message}`, 'error');
+      }
+    }
+
+    async function initPairs() {
+      const sel = document.getElementById('pairSelect');
+      if (!sel) return;
+      const applyHandlers = () => {
+        sel.onchange = () => {
+          loadChart(sel.value);
+          refreshStr();
+        };
+      };
+      try {
+        const res = await fetch('/api/pairs');
+        if (!res.ok) throw new Error('API алдаа');
+        const pairs = await res.json();
+        sel.innerHTML = '';
+        pairs.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.symbol;
+          opt.textContent = p.symbol;
+          sel.appendChild(opt);
+        });
+        applyHandlers();
+        if (pairs.length > 0) {
+          loadChart(pairs[0].symbol);
+          refreshStr();
+          return;
+        }
+      } catch (err) {
+        showBanner(`⚠️ Хослолын жагсаалтыг татаж чадсангүй: ${err.message}`);
+      }
+      applyHandlers();
+      if (sel.value) {
+        loadChart(sel.value);
+        refreshStr();
+      }
+    }
+
+    function setChartFallback(messageHtml) {
+      const host = document.getElementById('tv_chart');
+      if (!host) return;
+      host.innerHTML = `<div class="chart-fallback">${messageHtml || ''}</div>`;
+    }
+
+    function ensureTradingViewLoaded(timeoutMs = 8000) {
+      return new Promise((resolve, reject) => {
+        if (window.TradingView && typeof window.TradingView.widget === 'function') {
+          resolve(true);
+          return;
+        }
+
+        const existing = document.querySelector(`script[src="${TRADINGVIEW_SRC}"]`);
+        if (!existing) {
+          const script = document.createElement('script');
+          script.src = TRADINGVIEW_SRC;
+          script.async = true;
+          document.head.appendChild(script);
+        }
+
+        const start = Date.now();
+        const timer = setInterval(() => {
+          if (window.TradingView && typeof window.TradingView.widget === 'function') {
+            clearInterval(timer);
+            resolve(true);
+            return;
+          }
+          if (Date.now() - start > timeoutMs) {
+            clearInterval(timer);
+            reject(new Error('TRADINGVIEW_LOAD_TIMEOUT'));
+          }
+        }, 250);
+      });
+    }
+
+    function mapToTradingViewSymbol(rawSymbol) {
+      const sym = (rawSymbol || '').trim();
+      if (!sym) return '';
+      if (sym.includes(':')) return sym;
+
+      const normalized = sym.replace('/', '').toUpperCase();
+      const map = {
+        // FX + metals (commonly available)
+        EURUSD: 'OANDA:EURUSD',
+        GBPUSD: 'OANDA:GBPUSD',
+        USDJPY: 'OANDA:USDJPY',
+        GBPJPY: 'OANDA:GBPJPY',
+        USDCHF: 'OANDA:USDCHF',
+        XAUUSD: 'OANDA:XAUUSD',
+
+        // Crypto
+        BTCUSD: 'COINBASE:BTCUSD',
+        BITCOIN: 'COINBASE:BTCUSD',
+      };
+
+      return map[normalized] || normalized;
+    }
+
+    function loadChart(symbol) {
+      if (!symbol) return;
+      const tvSymbol = mapToTradingViewSymbol(symbol);
+      const seq = ++chartLoadSeq;
+      chartReady = false;
+      setChartFallback('⏳ Chart ачаалж байна...');
+      try {
+        if (tvWidget && typeof tvWidget.remove === 'function') {
+          tvWidget.remove();
+        }
+      } catch (_) {
+        // ignore
+      }
+      tvWidget = null;
+
+      ensureTradingViewLoaded()
+        .then(() => {
+          if (seq !== chartLoadSeq) return;
+          try {
+            tvWidget = new TradingView.widget({
+              container_id: 'tv_chart',
+              symbol: tvSymbol,
+              interval: currentResolution,
+              timezone: 'Etc/UTC',
+              theme: 'light',
+              style: '1',
+              locale: 'en',
+              autosize: true,
+            });
+            // Free Widget doesn't support onChartReady
+            // tvWidget.onChartReady(() => {
+            //   if (seq !== chartLoadSeq) return;
+            //   chartReady = true;
+            // });
+            chartReady = true;
+          } catch (err) {
+            console.warn('TradingView widget init failed:', err);
+            const errText = (err && (err.message || err.name)) ? (err.message || err.name) : String(err);
+            setChartFallback(
+              `<strong>TradingView widget асахгүй байна.</strong><br>` +
+              `Symbol: <strong>${escapeHtml(symbol)}</strong> → <strong>${escapeHtml(tvSymbol)}</strong><br>` +
+              `Error: <span>${escapeHtml(errText)}</span><br>` +
+              `Шалтгаан: tv.js/TradingView embed блоклогдсон (Adblock/Firewall) эсвэл symbol provider дээр байхгүй байж болно.`
+            );
+          }
+        })
+        .catch(err => {
+          console.warn('TradingView script load failed:', err);
+          if (seq !== chartLoadSeq) return;
+          setChartFallback(
+            `<strong>TradingView script ачаалагдсангүй.</strong><br>` +
+            `Интернет/Firewall/Adblock tv.js-ийг хааж байгаа байж магадгүй.`
+          );
+        });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function setChartResolution(interval, clickedButton) {
+      if (!tvWidget) return;
+      currentResolution = interval;
+
+      // Free widget requires full reload to change property
+      const sel = document.getElementById('pairSelect');
+      if (sel && sel.value) {
+        loadChart(sel.value);
+      }
+      const buttons = document.querySelectorAll('.chart-controls button');
+      buttons.forEach(btn => {
+        const isActive = clickedButton ? btn === clickedButton : btn.dataset.resolution === interval;
+        btn.classList.toggle('active', isActive);
+      });
+    }
+
+    async function refreshStr() {
+      if (!assertAuthenticated()) return;
+      const select = document.getElementById('pairSelect');
+      if (!select) return;
+      const symbol = select.value;
+      if (!symbol) {
+        showBanner('⚠️ Хослол сонгоогүй байна!');
+        return;
+      }
+      showBanner('');
+      const outputEl = document.getElementById('aiOutput');
+      if (!outputEl) return;
+      outputEl.textContent = '⏳ STR шинжилгээ хийгдэж байна...';
+      try {
+        const res = await apiFetch(`/api/str-analyze?symbol=${encodeURIComponent(symbol)}`);
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        const data = await res.json();
+        const prof = data.profile || {};
+        document.getElementById('profileSummary').textContent = formatProfileSummary(prof);
+        let text = '';
+        if (data.setup) {
+          const s = data.setup;
+          text += `✅ ${formatPairLabel(data.pair)} ${s.direction}\n`;
+          text += `Entry: ${s.entry} | SL: ${s.sl} | TP: ${s.tp} | RR: ${s.rr}\n\n`;
+          text += data.ai_explanation || '';
+        } else {
+          text += data.ai_explanation || 'Одоогоор тохирох сетап илрээгүй байна.';
+          if (data.reasons && data.reasons.length) {
+            text += '\n\nШалтгаанууд:\n- ' + data.reasons.join('\n- ');
+          }
+        }
+        outputEl.textContent = text;
+        updateSetupStats(data.setup || null, data.pair);
+        markLastUpdate();
+      } catch (err) {
+        if (isSessionExpiredError(err)) {
+          outputEl.textContent = '⚠️ Сешн дууссан. Дахин нэвтэрнэ үү.';
+        } else {
+          outputEl.textContent = `⚠️ STR шинжилгээ амжилтгүй: ${err.message}`;
+        }
+        updateSetupStats(null, null);
+      }
+    }
+
+    async function refreshTech() {
+      if (!assertAuthenticated()) return;
+      const symbol = document.getElementById('pairSelect')?.value;
+      if (!symbol) {
+        showBanner('⚠️ Хослол сонгоогүй байна!');
+        return;
+      }
+      const outputEl = document.getElementById('aiOutput');
+      if (!outputEl) return;
+      outputEl.textContent = '⏳ Техник шинжилгээ татаж байна...';
+      try {
+        const res = await apiFetch(`/api/tech-analyze?symbol=${encodeURIComponent(symbol)}`);
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        const data = await res.json();
+        outputEl.textContent = data.analysis_text || JSON.stringify(data, null, 2);
+        markLastUpdate();
+      } catch (err) {
+        if (isSessionExpiredError(err)) {
+          outputEl.textContent = '⚠️ Сешн дууссан. Дахин нэвтэрнэ үү.';
+        } else {
+          outputEl.textContent = `⚠️ Техник шинжилгээний алдаа: ${err.message}`;
+        }
+      }
+    }
+
+    async function refreshMacro() {
+      if (!assertAuthenticated()) return;
+      const outputEl = document.getElementById('aiOutput');
+      if (!outputEl) return;
+      outputEl.textContent = '⏳ Макро тойм татаж байна...';
+      try {
+        const res = await apiFetch('/api/macro');
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        const data = await res.json();
+        outputEl.textContent = data.overview_text || JSON.stringify(data, null, 2);
+        markLastUpdate();
+      } catch (err) {
+        if (isSessionExpiredError(err)) {
+          outputEl.textContent = '⚠️ Сешн дууссан. Дахин нэвтэрнэ үү.';
+        } else {
+          outputEl.textContent = `⚠️ Макро тойм татахад алдаа: ${err.message}`;
+        }
+      }
+    }
+
+    async function loadProfile() {
+      if (!assertAuthenticated(false)) return;
+      try {
+        const res = await apiFetch('/api/profile');
+        if (!res.ok) throw new Error('Профайл олдсонгүй');
+        const profile = await res.json();
+        document.getElementById('profileSummary').textContent = formatProfileSummary(profile);
+        const nameInput = document.getElementById('profileName');
+        const noteInput = document.getElementById('profileNote');
+        const tzInput = document.getElementById('profileTzOffset');
+        if (nameInput) nameInput.value = profile.name || '';
+        if (noteInput) noteInput.value = profile.note || '';
+        if (tzInput) tzInput.value = (profile.tz_offset_hours ?? 8);
+      } catch (err) {
+        console.warn('Профайл ачаалах үед алдаа:', err);
+      }
+    }
+
+    async function saveProfile() {
+      if (!assertAuthenticated()) return;
+      const name = document.getElementById('profileName')?.value.trim() || 'Trader';
+      const note = document.getElementById('profileNote')?.value.trim() || '';
+      const tzRaw = document.getElementById('profileTzOffset')?.value;
+      let tzOffset = 8;
+      if (tzRaw !== undefined && tzRaw !== null && String(tzRaw).trim() !== '') {
+        const parsed = Number(tzRaw);
+        if (Number.isFinite(parsed)) tzOffset = Math.max(-12, Math.min(14, Math.trunc(parsed)));
+      }
+      const body = {
+        name,
+        profile: {
+          name,
+          note,
+          tz_offset_hours: tzOffset,
+        },
+      };
+      try {
+        const res = await apiFetch('/api/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        showBanner('✅ Профайл хадгалагдлаа.', 'success');
+        await loadProfile();
+        await loadProfiles();
+      } catch (err) {
+        showBanner(`⚠️ Профайл хадгалахад алдаа: ${err.message}`);
+      }
+    }
+
+    async function loadProfiles() {
+      if (!assertAuthenticated(false)) return;
+      if (!currentUser || !currentUser.is_admin) return;
+      try {
+        const res = await apiFetch('/api/profiles');
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        const profiles = await res.json();
+        renderProfilesList(profiles);
+      } catch (err) {
+        showBanner(`⚠️ Профайлын жагсаалт татахад алдаа: ${err.message}`);
+      }
+    }
+
+    function renderProfilesList(profiles) {
+      const container = document.getElementById('profilesList');
+      if (!container) return;
+      if (!profiles || profiles.length === 0) {
+        container.innerHTML = '<p style="font-size:12px; opacity:0.8;">Профайл олдсонгүй.</p>';
+        return;
+      }
+      container.innerHTML = profiles.map(p => {
+        const safeId = String(p.user_id || '').replace(/'/g, "\\'");
+        const safeEmail = String(p.email || '').replace(/'/g, "\\'");
+        const safeName = String(p.name || '').replace(/'/g, "\\'");
+        return `
+          <div class="profile-row">
+            <div>
+              <strong>${p.name || 'Нэргүй'}</strong>
+              <div style="font-size:11px; color:var(--muted);">${p.email || ''}</div>
+              <div style="font-size:11px; color:var(--muted);">RR ≥ ${p.min_rr || '-'} | TF: ${p.entry_tf || '-'}</div>
+            </div>
+            <button type="button" onclick="deleteProfile('${safeId}', '${safeEmail}', '${safeName}')">Устгах</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function deleteProfile(userId, email, name) {
+      if (!userId || !assertAuthenticated()) return;
+      if (!currentUser?.is_admin) {
+        showBanner('⚠️ Зөвхөн админ хэрэглэгч устгах эрхтэй.');
+        return;
+      }
+
+      if (currentUser && String(currentUser.user_id) === String(userId)) {
+        showBanner('⚠️ Өөрийн аккаунтыг устгахыг хориглосон.', 'error');
+        return;
+      }
+
+      const label = (email || name) ? `${name || ''}${(name && email) ? ' — ' : ''}${email || ''}` : userId;
+      const ok = window.confirm(`Энэ профайлыг устгах уу?\n\n${label}\n\nЭнэ үйлдлийг буцаах боломжгүй.`);
+      if (!ok) return;
+
+      try {
+        const res = await apiFetch(`/api/profile?user_id=${encodeURIComponent(userId)}`, {
+          method: 'DELETE',
+        });
+        if (!res.ok) throw new Error('API хариу амжилтгүй');
+        showBanner('✅ Профайл устгагдлаа.', 'success');
+        await loadProfiles();
+      } catch (err) {
+        showBanner(`⚠️ Профайл устгахад алдаа: ${err.message}`);
+      }
+    }
+  </script>
+</body>
+
+</html>

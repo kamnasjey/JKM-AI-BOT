@@ -1,0 +1,35 @@
+{
+  "XAUUSD": {
+    "IG": "CS.D.CFDGOLD.CFDGC.IP"
+  },
+  "GOLD": {
+    "IG": "CS.D.CFDGOLD.CFDGC.IP"
+  },
+  "EURUSD": {
+    "IG": "CS.D.EURUSD.MINI.IP"
+  },
+  "GBPUSD": {
+    "IG": "CS.D.GBPUSD.MINI.IP"
+  },
+  "USDJPY": {
+    "IG": "CS.D.USDJPY.CFD.IP"
+  },
+  "EURJPY": {
+    "IG": "CS.D.EURJPY.MINI.IP"
+  },
+  "GBPJPY": {
+    "IG": "CS.D.GBPJPY.MINI.IP"
+  },
+  "AUDUSD": {
+    "IG": "CS.D.AUDUSD.MINI.IP"
+  },
+  "USDCAD": {
+    "IG": "CS.D.USDCAD.MINI.IP"
+  },
+  "BTCUSD": {
+    "IG": "CS.D.BITCOIN.CFD.IP"
+  },
+  "BITCOIN": {
+    "IG": "CS.D.BITCOIN.CFD.IP"
+  }
+}

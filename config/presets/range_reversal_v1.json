@@ -1,0 +1,17 @@
+{
+  "preset_id": "range_reversal_v1",
+  "schema_version": 1,
+  "strategies": [
+    {
+      "strategy_id": "range_reversal_v1",
+      "enabled": true,
+      "priority": 50,
+      "min_score": 0.9,
+      "min_rr": 2.5,
+      "allowed_regimes": ["RANGE", "CHOP"],
+      "detectors": ["range_box_edge", "sr_bounce", "fakeout_trap"],
+      "conflict_epsilon": 0.05,
+      "confluence_bonus_per_family": 0.25
+    }
+  ]
+}

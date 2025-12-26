@@ -1,0 +1,17 @@
+{
+  "preset_id": "breakout_retest_v1",
+  "schema_version": 1,
+  "strategies": [
+    {
+      "strategy_id": "breakout_retest_v1",
+      "enabled": true,
+      "priority": 50,
+      "min_score": 1.0,
+      "min_rr": 2.5,
+      "allowed_regimes": ["TREND_BULL", "TREND_BEAR"],
+      "detectors": ["sr_breakout", "sr_role_reversal", "structure_trend"],
+      "conflict_epsilon": 0.05,
+      "confluence_bonus_per_family": 0.25
+    }
+  ]
+}

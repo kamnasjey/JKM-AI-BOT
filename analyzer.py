@@ -145,9 +145,64 @@ def analyze_pair_multi_tf_ig_v2(ig, epic: str, pair: str) -> str:
         for r in reason:
             text.append(f"  • {r}")
 
+
     return "\n".join(text)
 
 
-# Хуучин нэршилтэй нийцүүлэх alias
 def analyze_pair_multi_tf_ig(ig, epic: str, pair: str) -> str:
     return analyze_pair_multi_tf_ig_v2(ig, epic, pair)
+
+
+# --- New Structured Analyzer ---
+def get_setup_v2(ig, epic: str, pair: str) -> Dict[str, Any]:
+    """
+    Simulated structured output for Autopilot V1.
+    In real V1, this should use `engine_blocks` to calculate precise entry/sl/tp.
+    For now, we derive some basic logic similar to text logic but return dict.
+    """
+    # ... logic reuse ...
+    d1 = ig.get_candles(epic, "DAY", max_points=200)
+    h4 = ig.get_candles(epic, "HOUR_4", max_points=200)
+    
+    if not d1 or not h4:
+        return {}
+
+    # Simple reuse of internal helpers
+    # Hack to reuse existing parsed time logic if needed, but get_candles returns dicts
+    # We can just check trends
+    d1_trend = _simple_trend(d1)
+    h4_trend = _simple_trend(h4)
+    m15 = ig.get_candles(epic, "MINUTE_15", max_points=50) # fetch m15
+    if not m15:
+        return {}
+    last_price = m15[-1]["close"]
+    
+    setup = {}
+    
+    # Very basic simulation of a strategy to test notificatons
+    # Valid setup ONLY if D1 Up + H4 Up -> BUY, or D1 Down + H4 Down -> SELL
+    if d1_trend == "up" and h4_trend == "up":
+        setup = {
+            "pair": pair,
+            "direction": "BUY",
+            "timeframe": "M15",
+            "entry": last_price,
+            "sl": last_price * 0.995,  # 0.5% SL
+            "tp": last_price * 1.01,   # 1% TP
+            "rr": 2.0,
+            "reasons": ["D1 Uptrend", "H4 Uptrend", "Trend Alignment"]
+        }
+    elif d1_trend == "down" and h4_trend == "down":
+        setup = {
+            "pair": pair,
+            "direction": "SELL",
+            "timeframe": "M15",
+            "entry": last_price,
+            "sl": last_price * 1.005,
+            "tp": last_price * 0.99,
+            "rr": 2.0,
+            "reasons": ["D1 Downtrend", "H4 Downtrend", "Trend Alignment"]
+        }
+    
+    return setup
+

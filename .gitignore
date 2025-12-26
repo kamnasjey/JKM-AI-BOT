@@ -52,6 +52,9 @@ credentials.*
 *.pem
 *.p12
 *.jks
+user_profiles.json
+allowed_users.json
+instruments.json
 state/
 data/
 .idea/

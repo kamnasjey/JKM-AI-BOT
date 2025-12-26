@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ig_client import IGClient
 from config import WATCH_PAIRS
@@ -36,7 +36,7 @@ def list_pairs() -> List[Dict[str, str]]:
     return items
 
 
-def get_str_analysis(user_id: int, pair: str) -> Dict[str, Any]:
+def get_str_analysis(user_id: Union[int, str], pair: str) -> Dict[str, Any]:
     """
     Хэрэглэгчийн профайл дээр тулгуурлаад pair-ийг шалгана.
     Setup байвал STR + AI тайлбар, байхгүй бол яагаад үгүйг reasons-ээр өгнө.
@@ -73,10 +73,14 @@ def get_str_analysis(user_id: int, pair: str) -> Dict[str, Any]:
             "sl": setup.sl,
             "tp": setup.tp,
             "rr": setup.rr,
+            "user_strategy_note": profile.get("note"),
+            "user_strategy_summary": profile.get("strategy_summary"),
             "context": {
                 "h1_trend": getattr(scan_res.trend_info, "direction", None)
                 if scan_res.trend_info
                 else None,
+                "user_strategy_note": profile.get("note"),
+                "user_strategy_summary": profile.get("strategy_summary"),
             },
         }
 
@@ -100,6 +104,12 @@ def get_tech_analysis(pair: str) -> Dict[str, Any]:
     """
     analyzer.py ашиглаад multi-TF technical текст буцаана.
     """
+    market_data_provider = os.getenv("MARKET_DATA_PROVIDER", "simulation").strip().lower()
+    if market_data_provider not in ("ig", "igmarkets", "ig_markets"):
+        return {
+            "error": "IG market data түр унтраалттай байна (MARKET_DATA_PROVIDER=simulation). Data авах хэсгээ дараа нь асаана.",
+        }
+
     epic_env = f"EPIC_{pair.replace('/', '')}"
     epic = os.getenv(epic_env, "").strip()
     if not epic:

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/ganbayar_trading_bot/strategy_spec_v1.schema.json",
+  "title": "StrategySpec v1",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "strategy_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for logs and switching strategies"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "min_score": {
+      "type": "number",
+      "default": 0.0
+    },
+    "min_rr": {
+      "type": "number",
+      "default": 0.0
+    },
+    "allowed_regimes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["TREND_BULL", "TREND_BEAR", "RANGE", "CHOP"]
+      },
+      "description": "Optional regime allow-list; engine may use this to gate setups"
+    },
+    "detectors": {
+      "description": "Detector allow-list or per-detector config",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "enabled": { "type": "boolean" }
+            }
+          }
+        }
+      ]
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": { "type": "number" },
+      "description": "Optional scoring weight overrides (detector/family keys)"
+    }
+  },
+  "required": ["strategy_id"]
+}

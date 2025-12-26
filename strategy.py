@@ -12,12 +12,37 @@ JKM-trading-bot-ийн simple авто scan стратеги.
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-
 import os
+from datetime import datetime
+from typing import List, Dict, Any, Optional, TypedDict
+from dataclasses import dataclass
 
 from ig_client import IGClient
+from engine_blocks import (
+    normalize_candles,
+    sma,
+    Candle,
+)
+
+
+@dataclass
+class SimpleStrategyResult:
+    pair: str
+    timeframe: str
+    direction: str
+    entry: float
+    sl: float
+    tp: float
+    ma: float
+    # visualization-д хэрэг болдог тул
+    # raw dict хэлбэрээр буцааж болно, эсвэл Candle obj
+    candles: List[Dict[str, Any]]
+
+
+def _get_epic_for_pair(pair: str) -> Optional[str]:
+    key = f"EPIC_{pair.replace('/', '')}"
+    epic = os.getenv(key, "").strip()
+    return epic or None
 
 
 def _map_tf_to_resolution(tf: str) -> str:
@@ -34,25 +59,6 @@ def _map_tf_to_resolution(tf: str) -> str:
     return mapping.get(tf, "MINUTE_5")
 
 
-def _get_epic_for_pair(pair: str) -> Optional[str]:
-    key = f"EPIC_{pair.replace('/', '')}"
-    epic = os.getenv(key, "").strip()
-    return epic or None
-
-
-def _sma(values: List[float], period: int) -> List[float]:
-    if period <= 0 or len(values) < period:
-        return [0.0] * len(values)
-    out: List[float] = []
-    s = sum(values[:period])
-    out.extend([0.0] * (period - 1))
-    out.append(s / period)
-    for i in range(period, len(values)):
-        s += values[i] - values[i - period]
-        out.append(s / period)
-    return out
-
-
 def scan_pairs(
     timeframe: str,
     limit: int,
@@ -60,13 +66,7 @@ def scan_pairs(
 ) -> List[Dict[str, Any]]:
     """
     Өгөгдсөн timeframe дээр өгөгдсөн pairs жагсаалтад simple setup хайна.
-    Буцаах формат:
-      [{
-        "pair": str,
-        "timeframe": str,
-        "setup": {"direction","entry","sl","tp","ma"},
-        "candles": [{time,open,high,low,close}, ...]
-      }, ...]
+    Legacy compatibility: Returns List[Dict] to match old interface for now.
     """
 
     is_demo_env = os.getenv("IG_IS_DEMO", "false").lower() in ("1", "true", "yes")
@@ -80,43 +80,39 @@ def scan_pairs(
             continue
 
         res = _map_tf_to_resolution(timeframe)
-        raw = ig.get_candles(epic, res, max_points=limit)
+        try:
+            raw = ig.get_candles(epic, res, max_points=limit)
+        except Exception:
+            continue
+
         if len(raw) < 60:
             continue
 
-        # time parse
-        candles: List[Dict[str, Any]] = []
-        closes: List[float] = []
-        lows: List[float] = []
-        highs: List[float] = []
-        for c in raw[-limit:]:
-            try:
-                t = datetime.fromisoformat(c["time"].replace("Z", ""))
-            except Exception:
-                t = datetime.utcnow()
-            candles.append(
-                {
-                    "time": t,
-                    "open": float(c["open"]),
-                    "high": float(c["high"]),
-                    "low": float(c["low"]),
-                    "close": float(c["close"]),
-                }
-            )
-            closes.append(float(c["close"]))
-            lows.append(float(c["low"]))
-            highs.append(float(c["high"]))
-
+        # Use engine_blocks to normalize
+        # Note: IGClient raw candles might need robust parsing inside normalize_candles
+        # raw is List[Dict]
+        
+        # We handle time parsing manually here to preserve legacy structure for 'candles' key
+        # but use engine blocks for math.
+        
+        # 1. Parse for internal math (Candle objects)
+        eng_candles = normalize_candles(raw)
+        closes = [c.close for c in eng_candles]
+        lows = [c.low for c in eng_candles]
+        highs = [c.high for c in eng_candles]
+        
+        # 2. Compute MA
         ma_period = 50
-        ma = _sma(closes, ma_period)
-        if len(ma) != len(closes):
+        ma_series = sma(closes, ma_period)
+        
+        if len(ma_series) < 3:
             continue
 
-        # Сүүлийн 3 лаан дээр simple логик – диагональ MA-г дагаж хөдөлж байгаа эсэх
+        # Logic
         last_close = closes[-1]
         prev_close = closes[-2]
-        last_ma = ma[-1]
-        prev_ma = ma[-2]
+        last_ma = ma_series[-1]
+        prev_ma = ma_series[-2]
 
         direction: Optional[str] = None
 
@@ -126,17 +122,18 @@ def scan_pairs(
             direction = "SELL"
 
         if direction is None:
-            # Энэ pair дээр тодорхой сигнал гарсангүй
             continue
 
-        # Simple SL/TP – ойролцоогоор 1:3 RR
+        # Simple SL/TP
         if direction == "BUY":
+            # SL = lowest of last 5
             sl = min(lows[-5:])
             risk = last_close - sl
             if risk <= 0:
                 continue
             tp = last_close + risk * 3.0
         else:
+            # SL = highest of last 5
             sl = max(highs[-5:])
             risk = sl - last_close
             if risk <= 0:
@@ -150,13 +147,25 @@ def scan_pairs(
             "tp": round(tp, 5),
             "ma": round(last_ma, 5),
         }
+        
+        # Re-construct raw candles with parsed time for frontend/bot
+        # (Legacy behavior expected dicts)
+        out_candles = []
+        for c in eng_candles:
+             out_candles.append({
+                 "time": c.time,
+                 "open": c.open,
+                 "high": c.high,
+                 "low": c.low,
+                 "close": c.close
+             })
 
         results.append(
             {
                 "pair": pair,
                 "timeframe": timeframe,
                 "setup": setup,
-                "candles": candles,
+                "candles": out_candles,
             }
         )
 

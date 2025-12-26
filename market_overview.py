@@ -16,19 +16,12 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from openai import OpenAI
-
-_API_KEY = os.getenv("OPENAI_API_KEY", "")
-
-_client = None
-if _API_KEY:
-    _client = OpenAI(api_key=_API_KEY)
-
 
 def get_market_overview_text() -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    if not _client:
+    api_key = str(os.getenv("OPENAI_API_KEY", "") or "").strip()
+    if not api_key:
         # Demo текст – ямар ч алдаа шидэхгүй, зүгээр л ойлгомжтой тойм.
         return (
             "📊 <b>Зах зээлийн товч тойм (demo)</b>\n"
@@ -54,7 +47,10 @@ def get_market_overview_text() -> str:
     )
 
     try:
-        resp = _client.chat.completions.create(
+        from openai import OpenAI  # type: ignore
+
+        client = OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {
@@ -67,10 +63,10 @@ def get_market_overview_text() -> str:
         )
         content = resp.choices[0].message.content.strip()
         return f"📊 <b>Зах зээлийн тойм</b>\nОгноо: {today} (UTC)\n\n{content}"
-    except Exception as e:
+    except Exception:
         return (
             "📊 <b>Зах зээлийн товч тойм</b>\n\n"
-            f"OpenAI-тай холбогдоход алдаа гарлаа: {e}\n\n"
+            "OpenAI боломжгүй (OPENAI_UNAVAILABLE)\n\n"
             "Одоогоор demo текст ашиглана:\n"
             "• Гол валютуудын чиглэлийг DXY, төв банкны бодлого, инфляц, "
             "risk-on/risk-off сэтгэл зүй тодорхойлдог.\n"

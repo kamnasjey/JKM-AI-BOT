@@ -1,0 +1,41 @@
+.app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.app__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 18px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(11, 18, 32, 0.92), rgba(15, 23, 42, 0.88));
+  backdrop-filter: blur(10px);
+}
+
+.app__brand {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.app__title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(245, 197, 66, 0.95);
+}
+
+.app__subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.app__main {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 18px;
+}

@@ -1,14 +1,11 @@
-# ai_explainer.py
+"""OpenAI-based natural-language explainer.
+
+This module must be safe to import even when optional dependencies
+like `openai` are not installed (pytest collection, CI, etc.).
+"""
 
 import os
 import json
-from openai import OpenAI
-
-# API key-гээ энд шууд бичихгүй, түр туршилтаар бичиж болно,
-# жинхэнэ үед нь os.environ-оос уншаарай.
-API_KEY = os.getenv("OPENAI_API_KEY", "")
-
-client = OpenAI(api_key=API_KEY)
 
 
 def explain_signal_ganbayar(signal: dict) -> str:
@@ -25,6 +22,10 @@ def explain_signal_ganbayar(signal: dict) -> str:
     tp = signal["tp"]
     rr = signal["rr"]
     ctx = signal.get("context", {})
+
+    # Optional: user strategy text/summary for personalization
+    user_strategy_note = signal.get("user_strategy_note") or ctx.get("user_strategy_note")
+    user_strategy_summary = signal.get("user_strategy_summary") or ctx.get("user_strategy_summary")
 
     h1_trend = ctx.get("h1_trend")
     h1_levels = ctx.get("h1_levels")
@@ -51,6 +52,9 @@ Timeframe (entry): {timeframe}
 H1 тренд: {h1_trend}
 H1 түвшинүүд: {h1_levels}
 
+Хэрэглэгчийн STR стратеги (товч): {user_strategy_summary}
+Хэрэглэгчийн STR стратеги (түүхий текст): {user_strategy_note}
+
 Дээрх мэдээлэлд үндэслээд:
 1) Энэ сетапыг яагаад ер нь авч болохоор гэж үзэж байгааг тайлбарла.
 2) Ямар гол давхцал (trend, level, candle structure) байна гэж харж байгааг хэл.
@@ -61,6 +65,17 @@ H1 түвшинүүд: {h1_levels}
 - Монгол хэлээр, ойлгомжтой, илүү "ахын" зөвлөгөө өгч байгаа мэт
 - Чимэг үг бага, гол нь логик, тайлбар тодорхой байг.
 """
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set")
+
+    try:
+        from openai import OpenAI  # type: ignore
+    except Exception as e:
+        raise RuntimeError("openai package not installed") from e
+
+    client = OpenAI(api_key=api_key)
 
     resp = client.chat.completions.create(
         model="gpt-4.1-mini",  # эсвэл gpt-4.1, gpt-5.1 гэх мэт

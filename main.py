@@ -6,8 +6,8 @@ from strategy import analyze_xauusd_full
 def main():
     pair = "XAUUSD"
 
-    # LIVE API key ашиглаад явж байгаа, өмнөх шиг is_demo=False
-    ig = IGClient.from_env(is_demo=False)
+    # Respects IG_IS_DEMO env (demo/live)
+    ig = IGClient.from_env()
 
     # Чиний IG дээрх Spot Gold ($1)-ийн EPIC
     epic_xauusd = "CS.D.CFDGOLD.BMU.IP"

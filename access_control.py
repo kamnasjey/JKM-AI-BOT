@@ -2,29 +2,60 @@
 """
 Telegram ботын access control:
 - Админ хэрэглэгч (config.ADMIN_USER_ID)
-- allowed_users.txt файлд бусад зөвшөөрөгдсөн хэрэглэгчид
+- allowed_users.json (preferred) эсвэл allowed_users.txt файлд бусад зөвшөөрөгдсөн хэрэглэгчид
 """
 
 from __future__ import annotations
 import os
 from typing import Set
+import json
+from pathlib import Path
+
 from config import ADMIN_USER_ID
 
-ALLOWED_USERS_FILE = "allowed_users.txt"
+from core.atomic_io import atomic_write_text
+
+ALLOWED_USERS_JSON = "allowed_users.json"
+ALLOWED_USERS_TXT = "allowed_users.txt"
 
 _ALLOWED_USERS: Set[int] = set()
 
 
 def load_allowed_users() -> None:
-    """allowed_users.txt файлд байгаа бүх ID-г ачаална."""
+    """allowed users жагсаалтыг ачаална.
+
+    Priority:
+    1) allowed_users.json (list[int] эсвэл {"allowed": [..]})
+    2) allowed_users.txt (one id per line)
+    """
     global _ALLOWED_USERS
     _ALLOWED_USERS = set()
-    if not os.path.exists(ALLOWED_USERS_FILE):
-        # Файл байхгүй бол зөвхөн админ эрхтэй
-        return
+
+    # 1) JSON
+    if os.path.exists(ALLOWED_USERS_JSON):
+        try:
+            with open(ALLOWED_USERS_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                candidates = data
+            elif isinstance(data, dict) and isinstance(data.get("allowed"), list):
+                candidates = data.get("allowed")
+            else:
+                candidates = []
+            for item in candidates:
+                try:
+                    _ALLOWED_USERS.add(int(item))
+                except Exception:
+                    continue
+            return
+        except Exception:
+            _ALLOWED_USERS = set()
+            # fall through to TXT
 
     try:
-        with open(ALLOWED_USERS_FILE, "r", encoding="utf-8") as f:
+        if not os.path.exists(ALLOWED_USERS_TXT):
+            return
+        with open(ALLOWED_USERS_TXT, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -40,9 +71,11 @@ def load_allowed_users() -> None:
 
 def _save_allowed_users() -> None:
     try:
-        with open(ALLOWED_USERS_FILE, "w", encoding="utf-8") as f:
-            for uid in sorted(_ALLOWED_USERS):
-                f.write(str(uid) + "\n")
+        # Save as JSON (preferred)
+        atomic_write_text(
+            Path(ALLOWED_USERS_JSON),
+            json.dumps(sorted(_ALLOWED_USERS), ensure_ascii=False, indent=2),
+        )
     except Exception:
         # Файл бичиж чадахгүй бол чимээгүй алгасна
         pass
@@ -57,7 +90,7 @@ def is_admin(user_id: int) -> bool:
 
 
 def is_allowed(user_id: int) -> bool:
-    """Админ байвал шууд зөвшөөрнө, бусад нь allowed_users.txt-д байх ёстой."""
+    """Админ байвал шууд зөвшөөрнө, бусад нь allowed_users жагсаалтад байх ёстой."""
     if is_admin(user_id):
         return True
     return user_id in _ALLOWED_USERS

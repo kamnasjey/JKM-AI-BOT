@@ -1,0 +1,17 @@
+{
+  "preset_id": "trend_pullback_v1",
+  "schema_version": 1,
+  "strategies": [
+    {
+      "strategy_id": "trend_pullback_v1",
+      "enabled": true,
+      "priority": 50,
+      "min_score": 1.0,
+      "min_rr": 3.0,
+      "allowed_regimes": ["TREND_BULL", "TREND_BEAR"],
+      "detectors": ["structure_trend", "fibo_retrace_confluence", "sr_role_reversal"],
+      "conflict_epsilon": 0.05,
+      "confluence_bonus_per_family": 0.25
+    }
+  ]
+}

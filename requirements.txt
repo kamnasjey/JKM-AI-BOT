@@ -6,3 +6,5 @@ openai
 python-dotenv
 fastapi
 uvicorn[standard]
+email-validator
+pytest

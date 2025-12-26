@@ -1,18 +1,26 @@
+
 import sys
+import codecs
 from ig_client import IGClient
 
-# Зарим pair дээр (алтад) тусгай EPIC нэршил ашиглая
+# Force UTF-8 for Windows Console
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+
+# Candidates
 SPECIAL_EPICS = {
     "XAUUSD": [
-        "CS.D.CFDGOLD.CFDGC.IP",
-        "CS.D.CFDGOLD.BMU.IP",
-        "CS.D.CFDGOLD.CFM.IP",
-        "IX.D.SUNGOLD.CFD.IP",
+        "CS.D.CFDGOLD.CFDGC.IP", # Standard
+        "CS.D.CFDGOLD.BMU.IP",   # Mini
+        "CS.D.CFDGOLD.CFM.IP",   # ?
+        "IX.D.SUNGOLD.CFD.IP",   # Index?
         "IX.D.SUNGOLD.BMU.IP",
+        "CS.D.USCGC.TODAY.IP",   # GC Futures
+        "CS.D.USCGC.CFD.IP",     # GC Spot CFD?
+        "CS.D.CFDGOLD.IFM.IP"
     ]
 }
 
-# Энгийн FX pair-үүд дээр туршиж үзэх EPIC pattern-ууд
 FX_EPIC_PATTERNS = [
     "CS.D.FX{pair}.CFD.IP",
     "CS.D.FX{pair}.MINI.IP",
@@ -20,53 +28,52 @@ FX_EPIC_PATTERNS = [
     "CS.D.{pair}.MINI.IP",
 ]
 
-
 def main():
     if len(sys.argv) < 2:
-        print("Хэрэглээ: python find_epic.py EURUSD")
-        print("Жишээ:   python find_epic.py XAUUSD")
-        sys.exit(1)
+        print("Usage: python find_epic.py EURUSD")
+        return
 
     pair = sys.argv[1].upper().replace("/", "")
     print(f"PAIR: {pair}")
-    print("IGClient-ээр логин хийж байна...\n")
+    print("Logging in...")
 
-    ig = IGClient.from_env(is_demo=False)
-    ig.login()  # Энэ чинь аль хэдийн амжилттай ажиллаж байгаа
+    ig = IGClient.from_env()
 
-    # 1) EPIC candidate-уудын жагсаалт бэлдэнэ
     if pair in SPECIAL_EPICS:
         epics = SPECIAL_EPICS[pair]
     else:
-        # FX pattern-уудаас үүсгэнэ
         epics = []
         for pattern in FX_EPIC_PATTERNS:
             epics.append(pattern.format(pair=pair))
-
-        # давхардлыг арилгана
         epics = list(dict.fromkeys(epics))
 
-    print(f"{pair} дээр дараах EPIC candidate-уудыг шалгана:")
+    print(f"Checking candidates for {pair}:")
     for e in epics:
         print(f"  - {e}")
 
-    print("\n=== TEST ЭХЭЛЛЭЭ ===\n")
+    print("\n=== STARTING TEST ===\n")
 
-    # 2) EPIC бүр дээр /prices ажиллуулж үзнэ
+    valid_found = []
+
     for epic in epics:
-        print(f"--- EPIC туршиж байна: {epic} ---")
+        print(f"Testing: {epic} ...", end=" ")
         try:
-            candles = ig.get_candles(epic, resolution="HOUR", max_points=10)
+            # Try to fetch just 5 candles
+            candles = ig.get_candles(epic, resolution="HOUR", max_points=5)
             n = len(candles) if candles is not None else 0
-            print(f"  ✅ OK — candles амжилттай авлаа. Нийт: {n}")
+            print(f"[OK] Got {n} candles.")
+            if n > 0:
+                valid_found.append(epic)
         except Exception as e:
-            print(f"  ❌ Алдаа: {e}")
+            print(f"[FAIL] {e}")
 
-        print()
-
-    print("=== TEST ДУУСЛАА ===")
-    print("✅ ✅ ✅ Амжилттай EPIC гарсан байвал дээрээс нь хараад тэрийгээ сонгоорой.")
-
+    print("\n=== TEST COMPLETED ===")
+    if valid_found:
+        print("VALID EPICS FOUND:")
+        for e in valid_found:
+            print(f" -> {e}")
+    else:
+        print("No valid EPIC found.")
 
 if __name__ == "__main__":
     main()
