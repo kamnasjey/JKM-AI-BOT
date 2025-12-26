@@ -1,6 +1,7 @@
 # ai_explainer.py
 
 import os
+import json
 from openai import OpenAI
 
 # API key-гээ энд шууд бичихгүй, түр туршилтаар бичиж болно,

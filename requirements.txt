@@ -4,3 +4,5 @@ matplotlib
 requests
 openai
 python-dotenv
+fastapi
+uvicorn[standard]

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8">
+  <title>JKM Trading AI Dashboard</title>
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0b0b10; color: #eee; }
+    header { padding: 16px 32px; display:flex; justify-content:space-between; align-items:center; background:#111; }
+    .logo { font-weight:700; font-size:20px; }
+    .nav a { margin-left:16px; color:#ccc; text-decoration:none; font-size:14px; }
+    .container { display:grid; grid-template-columns: 260px 1fr 360px; gap:16px; padding:16px 32px; }
+    .card { background:#15151f; border-radius:16px; padding:16px; box-shadow:0 0 16px rgba(0,0,0,0.3); }
+    #tv_chart { height: 520px; }
+    select, button { background:#1f1f2b; color:#eee; border-radius:8px; border:1px solid #333; padding:6px 10px; margin-bottom:8px; }
+    .tabs button { margin-right:6px; font-size:12px; }
+    pre { white-space:pre-wrap; font-family: system-ui, sans-serif; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">JKM Trading AI</div>
+    <nav class="nav">
+      <a href="#">Dashboard</a>
+      <a href="#">Strategy</a>
+      <a href="#">News</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <!-- Зүүн – pair + STR -->
+    <section class="card">
+      <h3>Хослол сонгох</h3>
+      <select id="pairSelect"></select>
+      <p id="profileSummary" style="font-size:13px; opacity:0.8; margin-top:8px;"></p>
+      <button onclick="refreshStr()">STR анализ</button><br>
+      <button onclick="refreshTech()">Technical</button><br>
+      <button onclick="refreshMacro()">Macro</button>
+    </section>
+
+    <!-- Дунд – TradingView chart -->
+    <section class="card">
+      <div id="tv_chart"></div>
+    </section>
+
+    <!-- Баруун – AI анализ -->
+    <section class="card">
+      <h3>AI тайлбар</h3>
+      <div class="tabs">
+        <button onclick="refreshStr()">STR</button>
+        <button onclick="refreshTech()">Technical</button>
+        <button onclick="refreshMacro()">Sentiment / Macro</button>
+      </div>
+      <pre id="aiOutput">Pair сонгоод товчлуурууд дээр дарж үзээрэй.</pre>
+    </section>
+  </main>
+
+  <script>
+    let tvWidget = null;
+
+    async function initPairs() {
+      const res = await fetch('/api/pairs');
+      const pairs = await res.json();
+      const sel = document.getElementById('pairSelect');
+      sel.innerHTML = '';
+      pairs.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.symbol;
+        opt.textContent = p.symbol;
+        sel.appendChild(opt);
+      });
+      sel.onchange = () => loadChart(sel.value);
+      if (pairs.length > 0) {
+        loadChart(pairs[0].symbol);
+        refreshStr();
+      }
+    }
+
+    function loadChart(symbol) {
+      if (tvWidget) tvWidget.remove();
+      tvWidget = new TradingView.widget({
+        container_id: "tv_chart",
+        symbol: symbol,
+        interval: "15",
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "1",
+        locale: "en",
+        autosize: true
+      });
+    }
+
+    async function refreshStr() {
+      const symbol = document.getElementById('pairSelect').value;
+      if (!symbol) return;
+      const res = await fetch(`/api/str-analyze?symbol=${encodeURIComponent(symbol)}`);
+      const data = await res.json();
+      const prof = data.profile || {};
+      document.getElementById('profileSummary').textContent =
+        `${prof.name || ''} | trend_tf=${prof.trend_tf || ''}, entry_tf=${prof.entry_tf || ''}, min_rr=${prof.min_rr || ''}`;
+      let text = '';
+      if (data.setup) {
+        const s = data.setup;
+        text += `Сетап байна: ${data.pair} ${s.direction}\n`;
+        text += `Entry: ${s.entry}, SL: ${s.sl}, TP: ${s.tp}, RR: ${s.rr}\n\n`;
+        text += data.ai_explanation || '';
+      } else {
+        text += data.ai_explanation || 'Одоогоор setup илрээгүй.';
+        if (data.reasons) {
+          text += '\n\nШалтгаанууд:\n- ' + data.reasons.join('\n- ');
+        }
+      }
+      document.getElementById('aiOutput').textContent = text;
+    }
+
+    async function refreshTech() {
+      const symbol = document.getElementById('pairSelect').value;
+      if (!symbol) return;
+      const res = await fetch(`/api/tech-analyze?symbol=${encodeURIComponent(symbol)}`);
+      const data = await res.json();
+      document.getElementById('aiOutput').innerHTML = data.analysis_text || JSON.stringify(data, null, 2);
+    }
+
+    async function refreshMacro() {
+      const res = await fetch('/api/macro');
+      const data = await res.json();
+      document.getElementById('aiOutput').innerHTML = data.overview_text || JSON.stringify(data, null, 2);
+    }
+
+    initPairs();
+  </script>
+</body>
+</html>

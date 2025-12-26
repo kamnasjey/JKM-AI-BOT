@@ -15,5 +15,23 @@
       ],
       "notes": "Determine main trend on H4 and H1; trade only in trend direction (BUY in uptrend, SELL in downtrend). Entry on M15 or M5 at 50-61.8% Fibonacci retracement of last move. Stop loss placed beyond last swing high/low, not fixed pips. Take profit at next major level. Hold positions from several hours to over a day."
     }
+  },
+  "1": {
+    "name": "Ganbayar default strategy",
+    "style": "trend-following / swing",
+    "note": "Default профайл. H4 дээр чиглэл, M15 дээр entry, RR≥1:3.",
+    "min_rr": 3.0,
+    "risk_percent": 1.0,
+    "trend_tf": "H4",
+    "entry_tf": "M15"
+  },
+  "1445509840": {
+    "name": "Ganbayar default strategy",
+    "style": "trend-following / swing",
+    "note": "Default профайл. H4 дээр чиглэл, M15 дээр entry, RR≥1:3.",
+    "min_rr": 3.0,
+    "risk_percent": 1.0,
+    "trend_tf": "H4",
+    "entry_tf": "M15"
   }
 }

@@ -1,0 +1,61 @@
+.aider*
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Local databases / runtime state
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# OS/editor
+.vscode/
+Thumbs.db
+Desktop.ini
+
+# Frontend (Vite/Node)
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+frontend/.vite/
+
+# Build artifacts
+build/
+*.egg-info/
+
+# --- Additional safe publishing rules ---
+.env.*
+secrets.*
+credentials.*
+*.key
+*.pem
+*.p12
+*.jks
+state/
+data/
+.idea/
+.DS_Store
+.next/
+out/
+coverage/
