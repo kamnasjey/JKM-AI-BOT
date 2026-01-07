@@ -67,3 +67,39 @@ docker compose logs -f backend
 
 ### State Persistence
 All runtime data is saved in the `./state` directory on the host machine. This assumes you backed up this folder if you migrate servers.
+
+## Verification Checklist
+
+Run these commands on the server to verify a successful deployment:
+
+1.  **Check Container Status**:
+    ```bash
+    docker compose ps
+    ```
+
+2.  **Verify Health Endpoint**:
+    ```bash
+    curl http://localhost:8000/health
+    # Expected: {"status":"ok", ...}
+    ```
+
+3.  **Verify API & Signals**:
+    ```bash
+    curl "http://localhost:8000/api/signals?limit=3"
+    # Expected: JSON list of signals (empty list [] is fine if new)
+    ```
+
+4.  **Verify Persistence Permissions**:
+    ```bash
+    ls -la state
+    # Expected: signals.jsonl files created by the app
+    
+    # Test write permission:
+    touch state/_write_test && echo OK > state/_write_test && cat state/_write_test
+    rm state/_write_test
+    ```
+
+5.  **Check Application Logs**:
+    ```bash
+    docker compose logs --tail=100 backend
+    ```
