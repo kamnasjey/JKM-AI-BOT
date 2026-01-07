@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: jkm_bot_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent state (signals, metrics, etc)
+      - ./state:/app/state
+      # Configs (if you want to hot-reload or persist overrides)
+      # - ./config:/app/config
+      # Logs
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Ulaanbaatar
+      # Add overrides if needed, e.g.
+      # - NOTIFY_MODE=production
+
+  # Optional: Nginx for reverse proxy / SSL handling
+  # nginx:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf
+  #   depends_on:
+  #     - backend
