@@ -1,9 +1,7 @@
-[
-  {
-    "user_id": "example_user",
-    "profile": {
-      "name": "Example Name",
-      "settings": {}
+{
+  "example_user": {
+    "preferences": {
+      "theme": "dark"
     }
   }
-]
+}

@@ -1,0 +1,10 @@
+[
+    {
+        "symbol": "BTCUSD",
+        "exchange": "binance"
+    },
+    {
+        "symbol": "ETHUSD",
+        "exchange": "binance"
+    }
+]
