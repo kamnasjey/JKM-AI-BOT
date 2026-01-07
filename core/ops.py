@@ -104,8 +104,21 @@ def log_startup_banner(
 
     schema = STRATEGY_SCHEMA_VERSION_SUPPORTED[0] if STRATEGY_SCHEMA_VERSION_SUPPORTED else 1
 
-    shadow_all = str(os.getenv("SHADOW_ALL_DETECTORS", "")).strip()
     shadow_all = "1" if shadow_all == "1" else "0"
+
+    # Feature Flags
+    flags_str = "NA"
+    try:
+        from core.feature_flags import get_all_flags
+        flags = get_all_flags()
+        # Compact string: "SHADOW=1,PUBLIC=1"
+        flags_parts = []
+        for k, v in flags.items():
+            short_k = k.replace("FF_", "")
+            flags_parts.append(f"{short_k}={1 if v else 0}")
+        flags_str = ",".join(sorted(flags_parts))
+    except Exception:
+        pass
 
     log_kv(
         logger,
@@ -117,6 +130,7 @@ def log_startup_banner(
         metrics_schema=int(METRICS_EVENT_SCHEMA_VERSION),
         detectors=int(detectors_count),
         shadow_all_detectors=_na_str(shadow_all),
+        feature_flags=flags_str,
         presets_dir=_na_str(presets_dir),
         notify_mode=_na_str(nm),
         provider=_na_str(pv),

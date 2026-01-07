@@ -74,6 +74,18 @@ def startup_event():
     except Exception:
         pass
 
+    try:
+        # Task 3: Startup visibility for signal history paths
+        from core.signals_store import DEFAULT_SIGNALS_PATH, DEFAULT_PUBLIC_SIGNALS_PATH
+        log_kv(
+            _WEB_LOGGER,
+            "SIGNALS_HISTORY_CONFIG",
+            signals_path=str(DEFAULT_SIGNALS_PATH),
+            public_signals_path=str(DEFAULT_PUBLIC_SIGNALS_PATH),
+        )
+    except Exception:
+        pass
+
     # Start the 24/7 background scanner
     scanner_service.start()
     logging.info("Web App Startup: Scanner Service Started")
@@ -589,22 +601,45 @@ def api_signals(request: Request, limit: int = 50, symbol: Optional[str] = None,
     if is_admin and user_id:
         effective_user_id = str(user_id)
 
-    legacy_items = list_signals_jsonl(
+    # Task 4: List from public history if available (preferred for UI)
+    from core.signals_store import list_public_signals_jsonl
+    
+    # Try public history (signals.jsonl) first
+    items = list_public_signals_jsonl(
         user_id=effective_user_id,
         limit=limit,
         symbol=symbol,
         include_all_users=is_admin and (user_id is None),
     )
+    
+    # Fallback to legacy if public returns empty (and we suspect missing file, though existing logic returns [] on missing file)
+    # Actually, `list_public_signals_jsonl` returns [] if file missing. 
+    # To keep backward compat fully, we can check if items is empty, try legacy.
+    # But if real history IS empty, this double-fetch is harmless.
+    if not items:
+         items = list_signals_jsonl(
+            user_id=effective_user_id,
+            limit=limit,
+            symbol=symbol,
+            include_all_users=is_admin and (user_id is None),
+        )
 
     out: List[Dict[str, Any]] = []
-    for item in legacy_items:
+    for item in items:
         try:
-            v1 = SignalPayloadV1.model_validate(item)
-            pub = to_public_v1(v1).model_dump(mode="json")
-            pub["legacy"] = item
-            out.append(pub)
+            # If item is already public format (likely), just use it. 
+            # If it's legacy, convert.
+            # We can detect by checking if it matches Public V1 schema or has specific keys.
+            if "legacy" in item or "engine_annotations" in item:
+                 # Already public or rich payload
+                 out.append(item)
+            else:
+                # Convert legacy
+                v1 = SignalPayloadV1.model_validate(item)
+                pub = to_public_v1(v1).model_dump(mode="json")
+                pub["legacy"] = item
+                out.append(pub)
         except Exception:
-            # Keep list stable: skip malformed lines rather than failing the whole API.
             continue
 
     return out
@@ -616,22 +651,46 @@ def api_signal_detail(request: Request, signal_id: str) -> Any:
     is_admin = bool(account.get("is_admin"))
     effective_user_id = str(account.get("user_id"))
 
-    payload = get_signal_by_id_jsonl(
+    # Task 4: Signal detail from public history first
+    from core.signals_store import get_public_signal_by_id_jsonl
+
+    payload = get_public_signal_by_id_jsonl(
         user_id=effective_user_id,
         signal_id=signal_id,
         include_all_users=is_admin,
     )
+    
+    if not payload:
+        # Fallback to legacy
+        payload = get_signal_by_id_jsonl(
+            user_id=effective_user_id,
+            signal_id=signal_id,
+            include_all_users=is_admin,
+        )
+
     if not payload:
         raise HTTPException(status_code=404, detail="Signal not found")
+        
     try:
+        # If already public format
+        if "engine_annotations" in payload:
+             # Best effort norm
+             return payload
+             
         v1 = SignalPayloadV1.model_validate(payload)
         pub = to_public_v1(v1).model_dump(mode="json")
         pub["legacy"] = payload
         return pub
     except Exception:
-        pub = to_public_v1_from_legacy_dict(payload).model_dump(mode="json")
-        pub["legacy"] = payload
-        return pub
+        # Last resort: treat as legacy dict and wrap
+        try:
+             # If it fails validation but is not None, wrap it safely
+             pub = to_public_v1_from_legacy_dict(payload).model_dump(mode="json")
+             pub["legacy"] = payload
+             return pub
+        except Exception:
+             # Should practically never happen if payload is dict
+             return payload
 
 
 @app.get("/api/signal/{signal_id}")

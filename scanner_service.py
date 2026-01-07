@@ -920,6 +920,68 @@ class ScannerService:
         else:
             log_kv(logger, "SCAN_END", scan_id=scan_id, total_ms=f"{dt_ms:.0f}", signals=signals_found)
 
+    
+    def _persist_signal_safely(
+        self,
+        *,
+        user_id: str,
+        symbol: str,
+        entry_tf: str,
+        direction: str,
+        entry: float,
+        sl: float,
+        tp: float,
+        rr: float,
+        strategy_id: str,
+        scan_id: str,
+        reasons: List[str],
+        payload: Optional[Dict[str, Any]],
+        selected: Dict[str, Any],
+        signal: SignalEvent,
+    ) -> None:
+        """Persist signal to JSONL history (legacy + public) with robust error handling."""
+        try:
+            from core.chart_annotation_builder import build_engine_annotations_v1_from_signal
+            from core.signal_payload_v1 import build_payload_v1
+            from core.signal_payload_public_v1 import to_public_v1
+            from core.signals_store import append_public_signal_jsonl, append_signal_jsonl
+
+            # 1. Build Base Payload (V1)
+            annotations = build_engine_annotations_v1_from_signal(signal)
+            sig_payload = build_payload_v1(
+                user_id=str(user_id),
+                symbol=str(symbol),
+                tf=str(entry_tf),
+                direction=str(direction),
+                entry=float(entry),
+                sl=float(sl),
+                tp=float(tp),
+                rr=float(rr),
+                strategy_id=str(strategy_id),
+                scan_id=str(scan_id),
+                reasons=reasons,
+                explain=(payload if isinstance(payload, dict) else None),
+                score=(selected.get("score") if isinstance(selected, dict) else None),
+                engine_annotations=annotations,
+            )
+
+            # 2. Persist Legacy
+            try:
+                append_signal_jsonl(sig_payload)
+            except Exception as e:
+                log_kv_error(logger, "SIGNALS_PERSIST_ERROR", stage="legacy", error=str(e))
+
+            # 3. Persist Public (Additively)
+            try:
+                pub_payload = to_public_v1(sig_payload)
+                append_public_signal_jsonl(pub_payload)
+            except Exception as e:
+                log_kv_error(logger, "SIGNALS_PERSIST_ERROR", stage="public", error=str(e))
+
+        except Exception as e:
+            # Catch build errors to ensure engine never crashes
+            log_kv_error(logger, "SIGNALS_BUILD_ERROR", error=str(e))
+
     def _make_persistent_signal_key(
         self,
         *,
@@ -1936,6 +1998,32 @@ class ScannerService:
 
                 # Passed controls => log OK and proceed to send
                 top_hits = None
+
+                # --- SHADOW EVALUATION BLOCK ---
+                try:
+                    from core.feature_flags import check_flag
+                    if check_flag("FF_SHADOW_EVAL"):
+                        # Shadow Logic: strictly experimental.
+                        # Example: Shadow model penalizes low RR more heavily logic.
+                        shadow_score = score_val
+                        if getattr(signal, "rr", 0.0) < 2.0:
+                            shadow_score *= 0.8
+                        
+                        from engine.utils.logging_utils import log_kv
+                        log_kv(
+                            logger,
+                            "METRICS_SHADOW_COMPARE",
+                            symbol=symbol,
+                            tf=str(entry_tf),
+                            live_score=score_val,
+                            shadow_score=shadow_score,
+                            delta=shadow_score - score_val,
+                            scan_id=scan_id
+                        )
+                except Exception:
+                    pass
+                # -------------------------------
+
                 hits_n = None
                 try:
                     if isinstance(debug, dict):
@@ -1966,41 +2054,25 @@ class ScannerService:
                     _maybe_audit_explain(payload)
                     _maybe_emit_metrics_from_explain(payload, debug=debug, failover_used=used_failover)
 
-                    # Persist SignalPayloadV1 for web UI overlay (non-blocking).
-                    try:
-                        from core.chart_annotation_builder import build_engine_annotations_v1_from_signal
-                        from core.signal_payload_v1 import build_payload_v1
-                        from core.signal_payload_public_v1 import to_public_v1
-                        from core.signals_store import append_public_signal_jsonl, append_signal_jsonl
-
-                        annotations = build_engine_annotations_v1_from_signal(signal)
-                        sig_payload = build_payload_v1(
-                            user_id=str(user_id),
-                            symbol=str(symbol),
-                            tf=str(entry_tf),
-                            direction=str(setup.direction),
-                            entry=float(setup.entry),
-                            sl=float(setup.sl),
-                            tp=float(setup.tp),
-                            rr=float(setup.rr),
-                            strategy_id=str(strategy_id or "NA"),
-                            scan_id=str(scan_id),
-                            reasons=list(reasons or []),
-                            explain=(payload if isinstance(payload, dict) else None),
-                            score=(selected.get("score") if isinstance(selected, dict) else None),
-                            engine_annotations=annotations,
-                        )
-                        append_signal_jsonl(sig_payload)
-
-                        # Optional parallel persistence for public/UI consumption.
-                        try:
-                            pub_payload = to_public_v1(sig_payload)
-                            append_public_signal_jsonl(pub_payload)
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
+                try:
+                    self._persist_signal_safely(
+                        user_id=str(user_id),
+                        symbol=str(symbol),
+                        entry_tf=str(entry_tf),
+                        direction=str(setup.direction),
+                        entry=float(setup.entry),
+                        sl=float(setup.sl),
+                        tp=float(setup.tp),
+                        rr=float(setup.rr),
+                        strategy_id=str(strategy_id or "NA"),
+                        scan_id=str(scan_id),
+                        reasons=list(reasons or []),
+                        payload=payload,
+                        selected=selected,
+                        signal=signal
+                    )
                 except Exception:
+                    # Top-level safety catch for persistence to never crash engine
                     pass
 
                 log_kv(

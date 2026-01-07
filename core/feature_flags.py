@@ -1,129 +1,65 @@
-from __future__ import annotations
+"""
+feature_flags.py
+----------------
+Centralized feature flag management for the trading engine.
+Loads flags from environment variables (prefix FF_) and provides defaults.
+"""
 
 import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Optional, Set
+import logging
+from typing import Dict, Any
 
+# Define all available flags and their defaults here.
+# This acts as the source of truth for flag existence.
+DEFAULTS: Dict[str, bool] = {
+    "FF_PUBLIC_SIGNALS_WRITE": True,   # Write to state/signals.jsonl
+    "FF_SHADOW_EVAL": False,           # Run shadow dual-evaluation for arbitration
+    "FF_NEW_DETECTORS_PACK": False,    # Enable experimental detectors
+    "FF_DETECTOR_SAFE_MODE": True,     # Catch all detector exceptions (non-fatal)
+}
 
-def _split_tokens(s: str) -> list[str]:
-    raw = (s or "").replace(";", ",").replace(" ", ",")
-    out: list[str] = []
-    for tok in raw.split(","):
-        t = str(tok or "").strip()
-        if t:
-            out.append(t)
-    return out
+_FLAGS_CACHE: Dict[str, bool] = {}
 
+def reload_flags() -> None:
+    """Reloads flags from environment variables, overriding defaults."""
+    _FLAGS_CACHE.clear()
+    for key, default_val in DEFAULTS.items():
+        # potential env var name: e.g. "FF_SHADOW_EVAL"
+        env_val = os.getenv(key)
+        if env_val is not None:
+            # Parse typical boolean strings
+            low = env_val.lower().strip()
+            is_true = low in ("1", "true", "yes", "on")
+            _FLAGS_CACHE[key] = is_true
+        else:
+            _FLAGS_CACHE[key] = default_val
 
-def _coerce_bool(v: Any, default: bool = False) -> bool:
-    if isinstance(v, bool):
-        return v
-    if v is None:
-        return default
-    s = str(v).strip().lower()
-    if s in ("1", "true", "yes", "y", "on"):
-        return True
-    if s in ("0", "false", "no", "n", "off"):
-        return False
-    return default
-
-
-@dataclass(frozen=True)
-class FeatureFlags:
-    """Simple feature flag container.
-
-    Sources:
-    - ENV: FEATURE_FLAGS="flag_a,flag_b" and DISABLE_FEATURE_FLAGS="flag_a"
-    - ENV bool shorthands: CANARY_MODE=1, SHADOW_ALL_DETECTORS=1
-    - Config dict: feature_flags={"flag_a": true} or feature_flags=["flag_a"]
-
-    Default is stable: flags are OFF unless explicitly enabled.
+def is_enabled(flag_name: str) -> bool:
     """
+    Check if a feature flag is enabled.
+    
+    Args:
+        flag_name: The name of the flag (must be in DEFAULTS).
+        
+    Returns:
+        bool: True if enabled, False otherwise. Defaults to False if unknown flag.
+    """
+    if not _FLAGS_CACHE:
+        reload_flags()
+        
+    # If strictly strictly requiring definition in DEFAULTS:
+    if flag_name not in DEFAULTS:
+        logging.getLogger(__name__).warning(f"Unknown feature flag checked: {flag_name}")
+        return False
+        
+    return _FLAGS_CACHE.get(flag_name, False)
 
-    enabled: Set[str] = field(default_factory=set)
-    canary_mode: bool = False
-    shadow_all_detectors: bool = False
+def get_all_flags() -> Dict[str, bool]:
+    """Returns a copy of all current flag states."""
+    if not _FLAGS_CACHE:
+        reload_flags()
+    return dict(_FLAGS_CACHE)
 
-    @staticmethod
-    def from_sources(*, config: Optional[Any] = None, env: Optional[Dict[str, str]] = None) -> "FeatureFlags":
-        env_map: Dict[str, str] = dict(env) if isinstance(env, dict) else dict(os.environ)
-
-        enabled: Set[str] = set()
-
-        # 1) ENV list
-        for tok in _split_tokens(env_map.get("FEATURE_FLAGS", "")):
-            if "=" in tok:
-                k, v = tok.split("=", 1)
-                if _coerce_bool(v, False):
-                    enabled.add(str(k).strip())
-            else:
-                enabled.add(tok)
-
-        # 2) Config
-        if isinstance(config, dict):
-            for k, v in config.items():
-                if _coerce_bool(v, False):
-                    enabled.add(str(k).strip())
-        elif isinstance(config, (list, tuple, set)):
-            for it in list(config):
-                s = str(it or "").strip()
-                if s:
-                    enabled.add(s)
-
-        # 3) Explicit disables
-        for tok in _split_tokens(env_map.get("DISABLE_FEATURE_FLAGS", "")):
-            enabled.discard(tok)
-
-        # Canonicalize
-        enabled = {str(x).strip() for x in enabled if str(x).strip()}
-
-        # 4) Built-in convenience toggles (keep backward compat)
-        canary_mode = _coerce_bool(env_map.get("CANARY_MODE"), False) or ("canary_mode" in enabled)
-
-        shadow_all_detectors = (
-            _coerce_bool(env_map.get("SHADOW_ALL_DETECTORS"), False)
-            or ("shadow_all_detectors" in enabled)
-        )
-
-        return FeatureFlags(
-            enabled=enabled,
-            canary_mode=bool(canary_mode),
-            shadow_all_detectors=bool(shadow_all_detectors),
-        )
-
-    def is_enabled(self, flag: str) -> bool:
-        return str(flag or "").strip() in self.enabled
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "enabled": sorted(self.enabled),
-            "canary_mode": bool(self.canary_mode),
-            "shadow_all_detectors": bool(self.shadow_all_detectors),
-        }
-
-
-def canary_detector_list(*, config: Optional[Dict[str, Any]] = None, env: Optional[Dict[str, str]] = None) -> list[str]:
-    env_map: Dict[str, str] = dict(env) if isinstance(env, dict) else dict(os.environ)
-    out: list[str] = []
-
-    # ENV: CANARY_DETECTORS="a,b,c"
-    out.extend(_split_tokens(env_map.get("CANARY_DETECTORS", "")))
-
-    # Config: {"canary_detectors": ["a", "b"]}
-    if isinstance(config, dict):
-        items = config.get("canary_detectors")
-        if isinstance(items, (list, tuple)):
-            for it in items:
-                s = str(it or "").strip()
-                if s:
-                    out.append(s)
-
-    # De-dupe preserve order
-    seen: Set[str] = set()
-    uniq: list[str] = []
-    for x in out:
-        if x in seen:
-            continue
-        seen.add(x)
-        uniq.append(x)
-    return uniq
+def check_flag(flag_name: str) -> bool:
+    """Alias for is_enabled."""
+    return is_enabled(flag_name)

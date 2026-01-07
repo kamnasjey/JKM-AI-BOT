@@ -89,6 +89,7 @@ def get_enabled_detectors(
                 enabled[name] = detector
         return enabled
     
+    
     # Process user-provided detector configs
     for name, cfg in detector_configs.items():
         if not isinstance(cfg, dict):
@@ -106,3 +107,71 @@ def get_enabled_detectors(
             enabled[name] = detector
     
     return enabled
+
+
+class SafeDetectorWrapper(BaseDetector):
+    """
+    Wraps any detector to ensure it never crashes the engine.
+    Catches exceptions and returns a 'miss' with error metadata.
+    """
+    def __init__(self, inner: BaseDetector):
+        self.inner = inner
+        # Proxy metadata
+        self.name = inner.name
+        self.doc = inner.doc
+        self.params_schema = inner.params_schema
+        self.examples = inner.examples
+        # Proxy config
+        self.config = inner.config
+
+    def detect(self, *args, **kwargs) -> Optional[Any]: # DetectorSignal
+        try:
+            return self.inner.detect(*args, **kwargs)
+        except Exception as e:
+            # Import here to avoid circular init if flags uses logging which uses something else...
+            # But core.feature_flags is safe.
+            from core.feature_flags import check_flag
+            
+            # If safety mode is OFF (rare/debug), re-raise
+            if not check_flag("FF_DETECTOR_SAFE_MODE"):
+                raise
+                
+            # Otherwise, log and swallow
+            from engine.utils.logging_utils import log_kv
+            import logging
+            
+            log_kv(
+                logging.getLogger(f"SafeWrapper_{self.name}"),
+                "DETECTOR_RUNTIME_ERROR",
+                detector=self.name,
+                error=str(e),
+                severity="error"
+            )
+            # Return None (no signal) effectively swallowing the error
+            return None
+
+    # Proxy other methods if necessary, but BaseDetector methods are simple.
+    def is_enabled(self) -> bool:
+        return self.inner.is_enabled()
+    
+    def get_doc(self) -> str:
+        return self.inner.get_doc()
+    
+    def get_params_schema(self) -> Dict[str, Any]:
+        return self.inner.get_params_schema()
+    
+    def get_examples(self) -> list:
+        return self.inner.get_examples()
+
+
+def get_detector(name: str, config: Optional[DetectorConfig] = None) -> Optional[BaseDetector]:
+    """
+    Get detector instance by name, wrapped for safety.
+    """
+    detector_class = DETECTOR_REGISTRY.get(name)
+    if detector_class is None:
+        return None
+    
+    instance = detector_class(config=config)
+    return SafeDetectorWrapper(instance)
+
