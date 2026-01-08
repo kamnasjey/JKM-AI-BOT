@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChartBoard, type ChartBoardHandle } from '../components/ChartBoard';
 import { apiGetJson } from '../lib/apiClient';
