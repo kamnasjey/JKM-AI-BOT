@@ -29,4 +29,4 @@ COPY . .
 EXPOSE 8000
 
 # Run uvicorn with 0.0.0.0 to accessible externally in container
-CMD ["uvicorn", "apps.web_app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8000"]
