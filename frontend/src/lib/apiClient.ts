@@ -10,7 +10,7 @@ function isAbsoluteUrl(url: string): boolean {
 }
 
 export function getApiBase(): string {
-  const base = (import.meta.env as any).NEXT_PUBLIC_API_BASE as string | undefined;
+  const base = (import.meta.env as Record<string, string | undefined>).VITE_API_BASE;
   return (base && base.trim()) || 'http://localhost:8000';
 }
 

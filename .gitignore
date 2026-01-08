@@ -71,3 +71,7 @@ emergency_deploy.sh
 verify_final.sh
 env_check.py
 env_fix.py
+
+# local/copilot artifacts
+*.vsix
+
