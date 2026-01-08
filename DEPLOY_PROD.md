@@ -25,6 +25,76 @@ Notes:
 - The script loads `.env` without printing secrets.
 - Use `python3` (not `python`) for JSON formatting.
 
+## GO-LIVE VPS Runbook (copy/paste)
+
+This is the end-to-end production runbook for a fresh VPS or a go-live day.
+
+```bash
+# 0) SSH
+ssh -o StrictHostKeyChecking=no root@159.65.11.255
+
+set -euo pipefail
+
+# 1) Deploy latest backend
+cd /opt/JKM-AI-BOT
+git pull
+chmod +x ./deploy_safe.sh
+./deploy_safe.sh
+
+# 2) Verify backend locally (backend is localhost-only)
+docker compose ps
+curl -fsS http://127.0.0.1:8000/health | python3 -m json.tool
+curl -fsS "http://127.0.0.1:8000/api/signals?limit=3" | python3 -m json.tool
+
+# 3) DNS check from VPS (requires A record api.jkmcopilot.com -> 159.65.11.255)
+apt update
+apt install -y dnsutils
+dig +short api.jkmcopilot.com
+
+# 4) Nginx reverse proxy + SSL (Let's Encrypt)
+apt install -y nginx certbot python3-certbot-nginx
+systemctl enable --now nginx
+
+cat > /etc/nginx/sites-available/jkm_api <<'NGINX'
+server {
+	listen 80;
+	listen [::]:80;
+	server_name api.jkmcopilot.com;
+
+	client_max_body_size 10m;
+
+	location / {
+		proxy_pass http://127.0.0.1:8000;
+		proxy_http_version 1.1;
+		proxy_set_header Connection "";
+
+		proxy_set_header Host $host;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto $scheme;
+	}
+}
+NGINX
+
+rm -f /etc/nginx/sites-enabled/default || true
+ln -sf /etc/nginx/sites-available/jkm_api /etc/nginx/sites-enabled/jkm_api
+nginx -t
+systemctl reload nginx
+
+# 5) Firewall
+ufw allow OpenSSH || true
+ufw allow 'Nginx Full' || true
+ufw --force enable || true
+ufw status || true
+
+# 6) Issue SSL cert (requires DNS + inbound port 80/443)
+certbot --nginx -d api.jkmcopilot.com
+
+# 7) HTTPS verify
+curl -fsS https://api.jkmcopilot.com/health | python3 -m json.tool
+curl -fsS "https://api.jkmcopilot.com/api/signals?limit=3" | python3 -m json.tool
+```
+
 ## Verification (copy/paste)
 
 ```bash
@@ -47,7 +117,7 @@ ls -la state logs
 Expected:
 - `docker compose ps` shows `backend` is `Up`
 - `/health` includes `"ok": true` and `"provider_configured": true`
-- `/api/signals?limit=3` returns `[]`
+- `/api/signals?limit=3` returns a JSON array (can be empty or non-empty)
 
 ## Troubleshooting
 

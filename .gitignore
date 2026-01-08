@@ -28,6 +28,9 @@ env/
 logs/
 *.log
 
+# Runtime data (do not commit)
+market_data/
+
 # OS/editor
 .vscode/
 Thumbs.db
@@ -62,3 +65,9 @@ data/
 .next/
 out/
 coverage/
+
+# Local utility scripts (server-only / not part of source)
+emergency_deploy.sh
+verify_final.sh
+env_check.py
+env_fix.py
