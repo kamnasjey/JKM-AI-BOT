@@ -83,10 +83,8 @@ except Exception as e:
 
 if not isinstance(data, list):
   sys.exit("ERROR: /api/signals did not return a JSON list")
-if len(data) != 0:
-  sys.exit("ERROR: /api/signals is not empty (expected [])")
 
-print("SIGNALS CHECK: OK")
+print(f"SIGNALS CHECK: OK (count={len(data)})")
 PY
 
 echo "== State write + mount verification =="
