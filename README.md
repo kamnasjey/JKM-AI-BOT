@@ -18,3 +18,8 @@ Python (FastAPI) backend + React (Vite/TS) frontend арилжааны боты�
 ## Important
 - .env, user_profiles.json, allowed_users.json, instruments.json зэрэг хувийн/нууц файлуудыг commit-д оруулахгүй!
 - Жишээ файлуудыг (example) ашиглан өөрийн хувийн файлаа үүсгэнэ.
+
+## Documentation
+- [AGENT_SESSION_GUIDE.md](./AGENT_SESSION_GUIDE.md) - GitHub Copilot agent session-тэй ажиллах заавар (Англи + Монгол)
+- [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) - Төслийн архитектур, дизайны зарчим
+- [.github/copilot-instructions.md](./.github/copilot-instructions.md) - Copilot агентын дүрэм
