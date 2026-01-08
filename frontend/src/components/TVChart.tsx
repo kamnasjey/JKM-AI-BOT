@@ -1,5 +1,6 @@
 import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts';
 import React, { useEffect, useRef } from 'react';
+import { apiFetch } from '../lib/apiClient';
 
 interface Props {
     symbol: string;
@@ -47,7 +48,7 @@ export const TVChart: React.FC<Props> = ({ symbol, tf }) => {
         // 2. Fetch History
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`/api/markets/${symbol}/candles?tf=${tf}&limit=1000`);
+                    const res = await apiFetch(`/api/markets/${symbol}/candles?tf=${tf}&limit=1000`);
                 if (!res.ok) throw new Error("Failed to fetch history");
                 const data = await res.json();
 

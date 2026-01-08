@@ -20,6 +20,8 @@ import {
 } from '../drawing/tools';
 import type { EngineAnnotations, EngineShape, ToolId, UserShape } from '../drawing/types';
 
+import { apiFetch, buildApiUrl } from '../lib/apiClient';
+
 import './ChartBoard.css';
 
 export type ChartBoardHandle = {
@@ -60,6 +62,10 @@ function normalizeTime(t: unknown): number | null {
     return Math.floor(ms / 1000);
   }
   return null;
+}
+
+function toWebSocketUrl(httpUrl: string): string {
+  return httpUrl.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
 }
 
 function getRelativePointer(ev: React.PointerEvent, host: HTMLElement): Pointer {
@@ -194,7 +200,7 @@ export const ChartBoard = forwardRef<ChartBoardHandle, ChartBoardProps>(function
       if (token) headers.Authorization = `Bearer ${token}`;
 
       const url = `/api/chart/annotations?symbol=${encodeURIComponent(symbol)}`;
-      const res = await fetch(url, { headers });
+      const res = await apiFetch(url, { headers });
       if (!res.ok) {
         const text = await res.text();
         setEngineStatus(`Engine error: ${res.status} ${text}`);
@@ -271,7 +277,7 @@ export const ChartBoard = forwardRef<ChartBoardHandle, ChartBoardProps>(function
     const fetchData = async () => {
       if (!seriesRef.current) return;
       try {
-        const res = await fetch(`/api/markets/${symbol}/candles?limit=1000`);
+        const res = await apiFetch(`/api/markets/${symbol}/candles?limit=1000`);
         if (res.ok) {
           const data = await res.json();
           const formatted = data.map((d: any) => {
@@ -301,9 +307,8 @@ export const ChartBoard = forwardRef<ChartBoardHandle, ChartBoardProps>(function
     // WEBSOCKET
     if (wsRef.current) wsRef.current.close();
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/markets/${symbol}`;
+    const wsBase = toWebSocketUrl(buildApiUrl(''));
+    const wsUrl = `${wsBase.replace(/\/$/, '')}/ws/markets/${symbol}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

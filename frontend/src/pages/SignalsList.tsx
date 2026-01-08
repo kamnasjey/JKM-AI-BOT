@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { apiGetJson } from '../lib/apiClient';
+
 function getUrlParam(key: string): string | null {
   try {
     return new URLSearchParams(window.location.search).get(key);
@@ -43,12 +45,7 @@ export function SignalsList(props: { onOpen: (signalId: string) => void }) {
     (async () => {
       setStatus('Loading…');
       try {
-        const res = await fetch('/api/signals?limit=50', { headers });
-        if (!res.ok) {
-          setStatus(`Error: ${res.status}`);
-          return;
-        }
-        const data = (await res.json()) as any[];
+        const data = await apiGetJson<any[]>('/api/signals?limit=50', { headers });
         if (cancelled) return;
         const mapped = Array.isArray(data)
           ? data
@@ -111,7 +108,7 @@ export function SignalsList(props: { onOpen: (signalId: string) => void }) {
             {items.length === 0 && (
               <tr>
                 <td className="p-3 text-gray-400" colSpan={6}>
-                  No signals yet.
+                  No signals yet. When the engine produces signals, they will show up here.
                 </td>
               </tr>
             )}

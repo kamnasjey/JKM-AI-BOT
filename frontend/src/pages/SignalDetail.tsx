@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChartBoard, type ChartBoardHandle } from '../components/ChartBoard';
+import { apiGetJson } from '../lib/apiClient';
 import type { EngineAnnotations } from '../drawing/types';
 
 function getUrlParam(key: string): string | null {
@@ -53,12 +54,7 @@ export function SignalDetail(props: { signalId: string; onBack: () => void }) {
     (async () => {
       setStatus('Loading…');
       try {
-        const res = await fetch(`/api/signals/${encodeURIComponent(props.signalId)}`, { headers });
-        if (!res.ok) {
-          setStatus(`Error: ${res.status}`);
-          return;
-        }
-        const data = (await res.json()) as any;
+        const data = await apiGetJson<any>(`/api/signals/${encodeURIComponent(props.signalId)}`, { headers });
         if (cancelled) return;
         setPayload(data);
         setStatus('');

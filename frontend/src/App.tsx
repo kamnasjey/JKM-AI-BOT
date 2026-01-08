@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ChartBoard } from './components/ChartBoard';
+import { StatusWidget } from './components/StatusWidget';
 import { SignalDetail } from './pages/SignalDetail';
 import { SignalsList } from './pages/SignalsList';
+import { apiGetJson } from './lib/apiClient';
 import './App.css';
 
 function App() {
@@ -12,9 +14,8 @@ function App() {
   // const [activeTf, setActiveTf] = useState<string>("5m"); // Removed as per instruction
 
   useEffect(() => {
-    fetch('/api/markets/symbols')
-      .then(res => res.json())
-      .then(data => {
+    apiGetJson<string[]>('/api/markets/symbols')
+      .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           setSymbols(data);
           setActiveSymbol(data[0]);
@@ -62,6 +63,8 @@ function App() {
             5m
           </button>
         )}
+
+        <StatusWidget />
       </header>
 
       {/* Main Content */}
