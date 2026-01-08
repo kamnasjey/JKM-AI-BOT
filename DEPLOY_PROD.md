@@ -35,6 +35,11 @@ docker compose ps
 curl -s http://localhost:8000/health | python3 -m json.tool || curl -s http://localhost:8000/health
 curl -s "http://localhost:8000/api/signals?limit=3" | python3 -m json.tool || curl -s "http://localhost:8000/api/signals?limit=3"
 
+# After hardening docker-compose.yml, the backend binds to 127.0.0.1 only.
+# Health/API should still work via localhost (on the VPS) and via your Nginx+HTTPS domain.
+# Example (if Nginx is configured to proxy to the backend):
+# curl -s https://jkmcopilot.com/health | python3 -m json.tool || true
+
 # Check persistence mounts exist on host
 ls -la state logs
 ```

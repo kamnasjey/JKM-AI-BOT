@@ -2,9 +2,39 @@ from __future__ import annotations
 import os, time, socket
 from pathlib import Path
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 APP_START = time.time()
 app = FastAPI(title="JKM-AI-BOT API", version="0.1.0")
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if raw == "":
+        return default
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+cors_allow_all = _env_bool("CORS_ALLOW_ALL", default=False)
+if cors_allow_all:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"]
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://jkmcopilot.com",
+            "https://www.jkmcopilot.com",
+        ],
+        allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"]
+    )
 
 def _ensure_writable_dir(p: Path) -> bool:
     try:
