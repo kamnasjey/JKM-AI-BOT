@@ -179,3 +179,126 @@ def append_signal(payload: dict[str, Any] = Body(...)):
         return {"ok": False, "error": "write_failed"}
 
     return {"ok": True}
+# =========================
+# Engine control v0.1 (internal-key protected)
+# =========================
+import os
+import time
+import threading
+from typing import Any, Callable, Optional
+
+from fastapi import Header, HTTPException, Depends
+
+def require_internal_key(
+    x_internal_api_key: Optional[str] = Header(default=None, alias="x-internal-api-key")
+) -> bool:
+    expected = os.getenv("INTERNAL_API_KEY")
+    if not expected:
+        # safer: misconfigured server
+        raise HTTPException(status_code=500, detail="INTERNAL_API_KEY not configured")
+    if not x_internal_api_key or x_internal_api_key != expected:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    return True
+
+class EngineController:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._started_at = time.time()
+        self.running: bool = False
+        self.last_scan_ts: Optional[int] = None
+        self.last_error: Optional[str] = None
+
+    def _resolve_scan_once(self) -> Callable[[], Any]:
+        """
+        Tries to find a 'scan once' function from scanner_service.py without hard-coding.
+        You can later replace this with the exact function call.
+        """
+        import scanner_service as ss  # local import to avoid import-time crashes
+        for name in ("scan_once", "run_once", "manual_scan", "do_scan_once", "scan_cycle"):
+            fn = getattr(ss, name, None)
+            if callable(fn):
+                return fn
+        raise RuntimeError("No scan-once function found in scanner_service.py")
+
+    def _loop(self, cadence_s: int = 300) -> None:
+        while not self._stop_event.is_set():
+            try:
+                self.manual_scan()
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+            # sleep in small chunks so stop feels responsive
+            for _ in range(max(1, cadence_s)):
+                if self._stop_event.is_set():
+                    break
+                time.sleep(1)
+
+    def start(self) -> dict:
+        with self._lock:
+            if self.running and self._thread and self._thread.is_alive():
+                return self.status()
+
+            self._stop_event.clear()
+            self.last_error = None
+
+            self._thread = threading.Thread(target=self._loop, name="engine-loop", daemon=True)
+            self._thread.start()
+            self.running = True
+            return self.status()
+
+    def stop(self) -> dict:
+        with self._lock:
+            self._stop_event.set()
+            if self._thread and self._thread.is_alive():
+                self._thread.join(timeout=5)
+            self.running = False
+            return self.status()
+
+    def manual_scan(self) -> dict:
+        try:
+            scan_once = self._resolve_scan_once()
+            result = scan_once()
+            self.last_scan_ts = int(time.time())
+            self.last_error = None
+            return {"ok": True, "result": result, "ts": self.last_scan_ts}
+        except Exception as e:
+            self.last_scan_ts = int(time.time())
+            self.last_error = f"{type(e).__name__}: {e}"
+            return {"ok": False, "error": self.last_error, "ts": self.last_scan_ts}
+
+    def status(self) -> dict:
+        uptime_s = int(time.time() - self._started_at)
+        alive = bool(self._thread and self._thread.is_alive())
+        return {
+            "ok": True,
+            "running": bool(self.running and alive),
+            "uptime_s": uptime_s,
+            "last_scan_ts": self.last_scan_ts,
+            "last_error": self.last_error,
+        }
+
+_engine = EngineController()
+
+@app.get("/api/engine/status", dependencies=[Depends(require_internal_key)])
+def engine_status():
+    return _engine.status()
+
+@app.post("/api/engine/start", dependencies=[Depends(require_internal_key)])
+def engine_start():
+    return _engine.start()
+
+@app.post("/api/engine/stop", dependencies=[Depends(require_internal_key)])
+def engine_stop():
+    return _engine.stop()
+
+@app.post("/api/engine/manual-scan", dependencies=[Depends(require_internal_key)])
+def engine_manual_scan():
+    return _engine.manual_scan()
+
+# Dashboard login flow sometimes calls this; stop returning 404.
+# Keep it internal-key protected (recommended).
+@app.post("/api/auth/register", dependencies=[Depends(require_internal_key)])
+def auth_register(payload: dict):
+    # v0.1 minimal: just acknowledge; later you can store into sqlite user_db.py
+    return {"ok": True, "registered": True, "payload_keys": list(payload.keys())}

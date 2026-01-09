@@ -2053,8 +2053,6 @@ class ScannerService:
                         pass
                     _maybe_audit_explain(payload)
                     _maybe_emit_metrics_from_explain(payload, debug=debug, failover_used=used_failover)
-                except Exception:
-                    payload = None
 
                 try:
                     self._persist_signal_safely(
