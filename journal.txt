@@ -1,5 +1,23 @@
 JKM-AI-BOT — Operator Journal
 
+CURRENT STATUS (what works / what doesn’t)
+- Massive provider: working (EURUSD m5 backfill writes candles; strict ticker mapping in provider).
+- Persistence: working (state/marketdata/<SYMBOL>/m5.csv.gz + meta grow; meta.last_ts advances).
+- Engine endpoints: working locally (status/manual-scan previously verified OK).
+- Not yet fully verified in this pass: Phase B (15 symbols × 30d) and Phase C (15 symbols × 2y chunk/resume).
+
+ENV/PORTS
+- Backend listens on 127.0.0.1:8000 (docker compose backend).
+- DATA_PROVIDER expected: massive (set in .env).
+- DEBUG_INGEST expected: 1 (temporary, for proof logs).
+
+LAST VERIFIED
+- /health OK and reports provider configured (no secrets).
+- Recent backend logs: no ERROR/TRACEBACK found in last tail.
+
+NEXT STEP
+- Collect 3+ INGEST_DEBUG evidence lines, then run Phase B (15 symbols × 30 days) backfill proof.
+
 RULES
 - ALWAYS start by reading and updating this journal.
 - NEVER print or write any secrets (API keys, OAuth secrets, tokens). Only write PRESENT/MISSING or masked.
@@ -87,3 +105,13 @@ NEXT:
 - Commit and push the latest fixes to GitHub.
 IDEAS:
 - Keep using INGEST_DEBUG evidence lines; still no secrets.
+
+[2026-01-09 17:25 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Added a top-of-file CURRENT STATUS section for fast operator context.
+NOW:
+- Pushing journal-only update to GitHub.
+NEXT:
+- Continue proof run: collect 3+ INGEST_DEBUG lines and start Phase B (15 symbols × 30d).
+IDEAS:
+- Keep journal updates small and checkpointed; no secrets.
