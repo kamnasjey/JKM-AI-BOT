@@ -93,19 +93,27 @@ WEB_SESSION_TTL_MINUTES: int = _get_int_env("WEB_SESSION_TTL_MINUTES", 720)
 # --- Арилжааны үндсэн тохиргоо ---
 
 # Market data source selection.
-# - "simulation" (default): run the full app without any external market-data API.
-# - "ig": use IG for candles (requires IG_* / IG_DEMO_* env vars).
-MARKET_DATA_PROVIDER: str = os.getenv("MARKET_DATA_PROVIDER", "simulation").strip().lower()
+# - "massive" (recommended): use Massive for candles (requires MASSIVE_* env vars).
+# - "simulation": run the full app without any external market-data API.
+MARKET_DATA_PROVIDER: str = os.getenv("MARKET_DATA_PROVIDER", "massive").strip().lower()
 
 # Автомат / гар скан хийх хослолууд
 WATCH_PAIRS = [
-    "XAUUSD",
-    "EURJPY",
-    "GBPJPY",
+    "EURUSD",
     "USDJPY",
+    "GBPUSD",
     "AUDUSD",
     "USDCAD",
-    "EURUSD",
+    "USDCHF",
+    "NZDUSD",
+    "EURJPY",
+    "GBPJPY",
+    "EURGBP",
+    "AUDJPY",
+    "EURAUD",
+    "EURCHF",
+    "XAUUSD",
+    "BTCUSD",
 ]
 
 # Авто скан хийх timeframe (5 минут тутам M5)

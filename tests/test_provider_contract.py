@@ -7,7 +7,7 @@ import pytest
 from data_providers.simulation_provider import SimulationDataProvider
 from data_providers.normalize import normalize_candles
 from data_providers.models import Candle, validate_candles
-from data_providers.instruments import load_instruments_catalog, resolve_provider_symbol
+from data_providers.massive_provider import to_massive_ticker
 
 
 def _assert_contract(candles):
@@ -37,11 +37,10 @@ def test_normalize_symbol_mappings_three_symbols():
     assert p.normalize_symbol(" btcusd ") == "BTCUSD"
 
 
-def test_instruments_catalog_has_ig_mappings_for_three_symbols():
-    catalog = load_instruments_catalog()
-    assert resolve_provider_symbol(catalog, symbol="EURUSD", provider_name="IG") == "CS.D.EURUSD.MINI.IP"
-    assert resolve_provider_symbol(catalog, symbol="XAUUSD", provider_name="IG") == "CS.D.CFDGOLD.CFDGC.IP"
-    assert resolve_provider_symbol(catalog, symbol="BTCUSD", provider_name="IG") == "CS.D.BITCOIN.CFD.IP"
+def test_massive_ticker_mapping_three_symbols():
+    assert to_massive_ticker("EURUSD") == "C:EURUSD"
+    assert to_massive_ticker("XAUUSD") == "C:XAUUSD"
+    assert to_massive_ticker("BTCUSD") == "X:BTCUSD"
 
 
 def test_normalize_removes_duplicates_and_sorts():
@@ -59,23 +58,19 @@ def test_normalize_removes_duplicates_and_sorts():
 
 
 @pytest.mark.skipif(
-    pytest.importorskip("os").getenv("IG_PROVIDER_CONTRACT_TEST") not in ("1", "true", "yes"),
-    reason="IG provider contract test is opt-in (set IG_PROVIDER_CONTRACT_TEST=1)",
+    pytest.importorskip("os").getenv("MASSIVE_PROVIDER_CONTRACT_TEST") not in ("1", "true", "yes"),
+    reason="Massive provider contract test is opt-in (set MASSIVE_PROVIDER_CONTRACT_TEST=1)",
 )
-def test_ig_provider_contract_if_configured():
-    # Optional: runs only when IG env is configured.
+def test_massive_provider_contract_if_configured():
+    # Optional: runs only when Massive env is configured.
     from data_providers.factory import create_provider
 
     import requests
 
-    p = create_provider(name="ig")
+    p = create_provider(name="massive")
     try:
         candles = p.fetch_candles("EURUSD", timeframe="m5", max_count=200)
     except requests.exceptions.HTTPError as e:
-        # Demo environments often return 403 for /prices history; treat as a skip.
-        resp = getattr(e, "response", None)
-        if resp is not None and getattr(resp, "status_code", None) == 403:
-            pytest.skip("IG /prices returned 403 (entitlement/allowance); skipping contract test")
         raise
 
     _assert_contract(candles)

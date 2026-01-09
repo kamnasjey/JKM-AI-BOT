@@ -1,0 +1,66 @@
+JKM-AI-BOT — Operator Journal
+
+RULES
+- ALWAYS start by reading and updating this journal.
+- NEVER print or write any secrets (API keys, OAuth secrets, tokens). Only write PRESENT/MISSING or masked.
+- Work on ONE repo only: /opt/JKM-AI-BOT.
+- Proof-first: after changes, run smoke test and capture evidence lines.
+- Avoid risky migrations for v0.1 (do not change persisted data format unless explicitly required).
+
+GOAL (v0.1 Massive-only, VPS backend)
+- Massive candle fetch works
+- Persistence works (state/marketdata grows)
+- 15 symbols backfill 2 years works (chunk + resume)
+- Engine endpoints status/start/stop/manual-scan work
+
+WATCHLIST (15 internal symbols)
+EURUSD, USDJPY, GBPUSD, AUDUSD, USDCAD, USDCHF, NZDUSD, EURJPY, GBPJPY, EURGBP, AUDJPY, EURAUD, EURCHF, XAUUSD, BTCUSD
+
+MASSIVE TICKER MAPPING (inside provider only)
+- FX + Gold: massiveTicker = "C:" + internalSymbol
+- Crypto: massiveTicker = "X:" + internalSymbol
+
+[2026-01-09 16:03 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Initialized journal.txt per ops rules.
+NOW:
+- Preparing Massive-only proof run (build → backfill → persistence → logs → engine endpoints).
+NEXT:
+- Enforce .env flags (DATA_PROVIDER=massive, DEBUG_INGEST=1) without revealing secrets.
+IDEAS:
+- Keep all evidence logs secret-free; only report PRESENT/MISSING for keys.
+
+[2026-01-09 16:04 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Upserted .env flags: DATA_PROVIDER=massive, DEBUG_INGEST=1 (no secrets printed).
+NOW:
+- Ready to validate Massive watchlist config.
+NEXT:
+- Verify config/massive_symbols.json is exactly the required 15-symbol list.
+IDEAS:
+- Keep DEBUG_INGEST=1 temporarily for proof, then disable after verification.
+
+[2026-01-09 16:06 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Verified config/massive_symbols.json matches the required 15-symbol list.
+NOW:
+- Proceeding to smoke proof run (rebuild + EURUSD backfill + persistence + logs + engine manual-scan).
+NEXT:
+- Run docker compose rebuild and EURUSD backfill (7 days, m5, chunk-days=7) and capture proof lines.
+IDEAS:
+- Use docker logs grep INGEST_DEBUG for evidence fields (provider/internalSymbol/massiveTicker/tf/candles/persist/ms).
+
+[2026-01-09 16:10 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Rebuilt backend container: docker compose up -d --build (container recreated).
+- Smoke proof: Massive fetch + persistence + evidence logs + engine endpoints.
+- Evidence (no secrets):
+	- INGEST_DEBUG admin_backfill_chunk: provider=MASSIVE internalSymbol=EURUSD massiveTicker=C:EURUSD tf=m5 candles=60 persist=state/marketdata/EURUSD/m5.csv.gz ms~702
+	- Persistence grew: state/marketdata/EURUSD/m5.csv.gz size 4.0K → 4.2K; meta.rows_count 366 → 372; meta.last_ts advanced.
+	- Engine endpoint: POST /api/engine/manual-scan returned ok:true with last_scan_id present.
+NOW:
+- Proof artifacts are present under state/marketdata and in docker logs.
+NEXT:
+- Create git commit and push to remote.
+IDEAS:
+- Backfill script writes 0 rows if the requested window is already covered; admin backfill can still append newest candles for proof.

@@ -12,18 +12,21 @@ def _env_provider_name() -> str:
     if raw and raw.strip():
         return raw.strip().lower()
     # Back-compat: MARKET_DATA_PROVIDER
-    return os.getenv("MARKET_DATA_PROVIDER", "simulation").strip().lower()
+    return os.getenv("MARKET_DATA_PROVIDER", "massive").strip().lower()
 
 
 def create_provider(*, name: Optional[str] = None) -> DataProvider:
     provider = (name or _env_provider_name()).strip().lower()
 
-    if provider in ("ig", "igmarkets", "ig_markets"):
-        from ig_client import IGClient
-        from .ig_provider import IGDataProvider
+    if provider in ("massive", "massiveio", "massive_io"):
+        from .massive_provider import MassiveDataProvider
 
-        client = IGClient.from_env()
-        return IGDataProvider(client)
+        return MassiveDataProvider()
+
+    if provider in ("ig", "igmarkets", "ig_markets"):
+        raise ValueError(
+            "IG provider support has been removed. Set DATA_PROVIDER=massive (recommended) or DATA_PROVIDER=simulation."
+        )
 
     # Default safe provider (no external IO)
     from .simulation_provider import SimulationDataProvider

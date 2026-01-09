@@ -27,6 +27,7 @@ class SimulationDataProvider(DataProvider):
         max_count: int = 100,
         limit: Optional[int] = None,
         since_ts: Optional[datetime] = None,
+        until_ts: Optional[datetime] = None,
     ) -> List[Candle]:
         effective_limit = int(limit) if limit is not None else int(max_count)
         raw = self._provider.get_candles(

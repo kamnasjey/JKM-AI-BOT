@@ -132,6 +132,8 @@ def _read_last_json_objects(file_path: Path, limit: int) -> list[dict[str, Any]]
 @app.get("/health")
 def health():
     massive_key = (os.getenv("MASSIVE_API_KEY") or "").strip()
+    massive_base_url = (os.getenv("MASSIVE_BASE_URL") or "").strip()
+    data_provider = (os.getenv("DATA_PROVIDER") or os.getenv("MARKET_DATA_PROVIDER") or "").strip().lower()
     state_dir = Path(os.getenv("STATE_DIR") or "/app/state")
     writable = _ensure_writable_dir(state_dir)
 
@@ -143,7 +145,10 @@ def health():
         "ts": int(time.time()),
         "uptime_s": int(time.time() - APP_START),
         "hostname": socket.gethostname(),
-        "provider_configured": bool(massive_key),
+        "provider_configured": bool(massive_key and massive_base_url),
+        "provider_env": data_provider or None,
+        "massive_api_key_present": bool(massive_key),
+        "massive_base_url_present": bool(massive_base_url),
         "state_dir": str(state_dir),
         "state_writable": writable,
         "signals_file_exists": bool(signals_exists),
@@ -302,3 +307,120 @@ def engine_manual_scan():
 def auth_register(payload: dict):
     # v0.1 minimal: just acknowledge; later you can store into sqlite user_db.py
     return {"ok": True, "registered": True, "payload_keys": list(payload.keys())}
+
+
+# =========================
+# Admin backfill (internal-key protected)
+# =========================
+
+
+@app.post("/api/admin/backfill", dependencies=[Depends(require_internal_key)])
+def admin_backfill(payload: dict):
+    """Run a short backfill job into /app/state/marketdata.
+
+    Intended for ops validation (small ranges). Heavy multi-year backfills should
+    use scripts/backfill_massive.py.
+
+    Payload:
+      - symbol: str (required)
+      - timeframe: str (default: m5)
+      - days: int (default: 7)
+      - chunk_days: int (default: 1)
+    """
+
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol required")
+
+    timeframe = str(payload.get("timeframe") or "m5").strip().lower() or "m5"
+    days = int(payload.get("days") or 7)
+    chunk_days = int(payload.get("chunk_days") or 1)
+    days = max(1, min(days, 30))
+    chunk_days = max(1, min(chunk_days, 14))
+
+    # Run in background so API stays responsive.
+    def _job() -> None:
+        import time
+        import logging
+        from datetime import datetime, timedelta, timezone
+
+        from core.ingest_debug import log_ingest_event
+        from core.marketdata_store import append as store_append
+        from data_providers.factory import create_provider
+        from data_providers.models import Candle, candles_to_cache_dicts
+        from data_providers.massive_provider import to_massive_ticker
+
+        provider = create_provider(name="massive")
+
+        job_logger = logging.getLogger("uvicorn.error")
+
+        job_logger.info(
+            "ADMIN_BACKFILL_START symbol=%s tf=%s days=%s chunk_days=%s",
+            symbol,
+            timeframe,
+            days,
+            chunk_days,
+        )
+
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=days)
+
+        cur = start
+        step = timedelta(days=chunk_days)
+        while cur < end:
+            nxt = min(end, cur + step)
+            est = int((nxt - cur).total_seconds() / 300) + 20
+            t0 = time.perf_counter()
+            candles = provider.fetch_candles(
+                symbol,
+                timeframe=timeframe,
+                max_count=est,
+                limit=est,
+                since_ts=cur,
+                until_ts=nxt,
+            )
+            dt_ms = (time.perf_counter() - t0) * 1000.0
+            cache_dicts = candles_to_cache_dicts(candles) if candles else []
+            _, persisted_path = store_append(symbol, timeframe, cache_dicts)
+
+            job_logger.info(
+                "ADMIN_BACKFILL_CHUNK symbol=%s tf=%s start=%s end=%s fetched=%d wrote=%d ms=%.2f",
+                symbol,
+                timeframe,
+                cur.isoformat(),
+                nxt.isoformat(),
+                int(len(candles or [])),
+                int(len(cache_dicts)),
+                float(dt_ms),
+            )
+
+            massive_ticker = None
+            try:
+                massive_ticker = to_massive_ticker(symbol)
+            except Exception:
+                massive_ticker = None
+
+            log_ingest_event(
+                job_logger,
+                "admin_backfill_chunk",
+                provider=getattr(provider, "name", "unknown"),
+                symbol=symbol,
+                timeframe=timeframe,
+                candles_count=int(len(cache_dicts)),
+                requested_start=cur.isoformat(),
+                requested_end=nxt.isoformat(),
+                persist_path=str(persisted_path),
+                duration_ms=dt_ms,
+                extra={
+                    "internalSymbol": symbol,
+                    "massiveTicker": massive_ticker,
+                    "fetchedCandles": int(len(candles or [])),
+                },
+            )
+            # small pacing to be gentle
+            time.sleep(0.1)
+            cur = nxt
+
+    t = threading.Thread(target=_job, name=f"admin-backfill-{symbol}", daemon=True)
+    t.start()
+    return {"ok": True, "started": True, "symbol": symbol, "timeframe": timeframe, "days": days, "chunk_days": chunk_days}

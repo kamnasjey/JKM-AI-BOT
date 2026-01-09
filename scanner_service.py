@@ -7,7 +7,7 @@ import time
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from typing import Any as _Any
 
@@ -165,7 +165,7 @@ def _attach_explain_to_debug(debug: Any, payload: Dict[str, Any]) -> Dict[str, A
     out["explain"] = dict(payload or {})
     return out
 
-_CACHE_PERSIST_PATH = "data/market_cache.json"
+_CACHE_PERSIST_PATH = os.getenv("MARKET_CACHE_PATH", "state/market_cache.json")
 
 
 def _convert_dicts_to_candles(items: List[Dict[str, Any]]) -> List[Candle]:
@@ -437,20 +437,32 @@ class ScannerService:
         except Exception as e:
             logger.warning(f"Failed to load cache from {_CACHE_PERSIST_PATH}: {e}")
 
-        market_data_provider = os.getenv("MARKET_DATA_PROVIDER", "simulation").strip().lower()
+        # If Massive is enabled, prefer preloading from persisted per-symbol store under state/marketdata.
+        # This proves persistence works and gives engine immediate data after restart.
+        try:
+            env_provider_pre = (os.getenv("DATA_PROVIDER", "") or "").strip().lower() or (
+                os.getenv("MARKET_DATA_PROVIDER", "") or ""
+            ).strip().lower()
+            if env_provider_pre in ("massive", "massiveio", "massive_io"):
+                from core.marketdata_store import load_tail
+                from watchlist_union import get_union_watchlist
+
+                syms = get_union_watchlist(max_per_user=5)
+                loaded = 0
+                for sym in syms:
+                    items = load_tail(sym, "m5", limit=5000)
+                    if items:
+                        market_cache.upsert_candles(sym, items)
+                        loaded += 1
+                if loaded:
+                    logger.info(f"Preloaded marketdata_store m5 for {loaded} symbols into cache")
+        except Exception as e:
+            logger.warning(f"Failed to preload marketdata_store: {e}")
+
+        market_data_provider = os.getenv("MARKET_DATA_PROVIDER", "massive").strip().lower()
         # Back-compat: MARKET_DATA_PROVIDER still works.
         # New: DATA_PROVIDER supports provider swapping without touching engine/cache.
         env_provider = os.getenv("DATA_PROVIDER", "").strip().lower() or market_data_provider
-        use_ig = env_provider in ("ig", "igmarkets", "ig_markets")
-
-        # Reset IG metrics window only if IG mode is selected.
-        if use_ig:
-            try:
-                from ig_client import get_ig_request_stats
-
-                get_ig_request_stats(reset=True)
-            except Exception:
-                pass
 
         # 1. Initialize Provider (Adapter layer)
         provider = None
@@ -484,7 +496,7 @@ class ScannerService:
         # Note: IG demo/live may hit historical-data allowance; fallback avoids total downtime.
         self.ingestor = DataIngestor(
             provider=provider,
-            fallback_provider=(fallback_provider if (use_ig and provider is not fallback_provider) else None),
+            fallback_provider=(fallback_provider if (provider is not fallback_provider) else None),
             poll_interval=300,
             warmup=2016,
             incremental_limit=5,
@@ -492,23 +504,20 @@ class ScannerService:
             persist_every_cycles=1,
         )
         ingestor_task = asyncio.create_task(self.ingestor.run_forever())
-        
-        if use_ig:
-            logger.info("Ingestor started. Waiting for initial cache warmup...")
-            # Give ingestor time to fetch at least some candles per watched symbol.
-            warmup_deadline = time.time() + 60
-            while not self._stop_event.is_set() and time.time() < warmup_deadline:
-                symbols = []
-                try:
-                    symbols = market_cache.get_all_symbols()
-                except Exception:
-                    symbols = []
 
-                if symbols and all(len(market_cache.get_candles(s)) >= 50 for s in symbols):
-                    break
-                await asyncio.sleep(2)
-        else:
-            logger.info("Ingestor started (simulation mode). Skipping IG warmup wait.")
+        logger.info("Ingestor started. Waiting briefly for initial cache warmup...")
+        # Give ingestor time to fetch at least some candles per watched symbol.
+        warmup_deadline = time.time() + 60
+        while not self._stop_event.is_set() and time.time() < warmup_deadline:
+            symbols = []
+            try:
+                symbols = market_cache.get_all_symbols()
+            except Exception:
+                symbols = []
+
+            if symbols and all(len(market_cache.get_candles(s)) >= 50 for s in symbols):
+                break
+            await asyncio.sleep(2)
         
         # 3. Main Analysis Loop
         logger.info("Starting Analysis Loop...")
@@ -598,12 +607,6 @@ class ScannerService:
             pass
 
         ig_before = None
-        try:
-            from ig_client import get_ig_request_stats
-
-            ig_before = get_ig_request_stats()
-        except Exception:
-            ig_before = None
 
         users = list_users()
         pairs_count = 0
@@ -652,12 +655,6 @@ class ScannerService:
             pass
 
         ig_after = None
-        try:
-            from ig_client import get_ig_request_stats
-
-            ig_after = get_ig_request_stats()
-        except Exception:
-            ig_after = None
 
         # Flush any pending state changes at cycle end.
         self._flush_state_if_dirty(scan_id=scan_id)
@@ -2207,6 +2204,54 @@ class ScannerService:
 # SCAN_END | scan_id=... | signals=3 | total_ms=812
 
 scanner_service = ScannerService()
+
+
+def start() -> dict:
+    """Start the background scanner service."""
+    scanner_service.start()
+    return {"ok": True}
+
+
+def stop() -> dict:
+    """Stop the background scanner service."""
+    scanner_service.stop()
+    return {"ok": True}
+
+
+def manual_scan() -> dict:
+    """Trigger a scan pass (does not block until completion)."""
+    scanner_service.manual_scan()
+    return {"ok": True}
+
+
+def scan_once(timeout_s: int = 30) -> dict:
+    """Run one scan cycle by triggering manual scan and waiting briefly.
+
+    This is a small sync wrapper used by the internal EngineController in
+    api_server.py. It waits until ScannerService updates last scan info.
+    """
+
+    try:
+        if not getattr(scanner_service, "_thread", None) or not scanner_service._thread.is_alive():
+            scanner_service.start()
+    except Exception:
+        # Best-effort: proceed with trigger.
+        pass
+
+    prev = scanner_service.get_last_scan_info()
+    prev_id = str(prev.get("last_scan_id") or "NA")
+    scanner_service.manual_scan()
+
+    deadline = time.time() + max(1, int(timeout_s))
+    while time.time() < deadline:
+        cur = scanner_service.get_last_scan_info()
+        cur_id = str(cur.get("last_scan_id") or "NA")
+        if cur_id != prev_id and cur_id != "NA":
+            return {"ok": True, "triggered": True, **cur}
+        time.sleep(0.5)
+
+    cur = scanner_service.get_last_scan_info()
+    return {"ok": True, "triggered": True, "completed": False, **cur}
 
 if __name__ == "__main__":
     # Test run

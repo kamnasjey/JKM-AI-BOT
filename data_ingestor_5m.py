@@ -1,6 +1,8 @@
 # data_ingestor_5m.py
 import logging
 import asyncio
+import os
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -9,7 +11,11 @@ from data_providers.base import DataProvider
 from data_providers.models import Candle, candles_to_cache_dicts
 from market_data_cache import market_cache
 from watchlist_union import get_union_watchlist
-from ig_client import FetchPausedError, ig_call_source
+
+from core.ingest_debug import log_ingest_event
+from core.marketdata_store import append as store_append
+
+from data_providers.massive_provider import to_massive_ticker
 
 import requests
 
@@ -100,47 +106,98 @@ class DataIngestor:
                 if now_utc < not_before:
                     return
             
-            # Since IG API doesn't support 'since_ts' cleanly in our wrapper yet 
-            # (wrapper handles it but underlying fetches max points), 
-            # we just rely on 'limit'.
-            
-            with ig_call_source("ingestor"):
-                if hasattr(self.provider, "fetch_candles"):
-                    candles = self.provider.fetch_candles(
-                        symbol,
-                        timeframe="m5",
-                        max_count=limit,
-                        since_ts=last_ts,
-                    )
-                else:
-                    candles = self.provider.get_candles(
-                        symbol,
-                        timeframe="m5",
-                        limit=limit,
-                        since_ts=last_ts,
-                    )
+            t_fetch = time.perf_counter()
+            requested_end_iso = datetime.now(timezone.utc).isoformat()
+            if hasattr(self.provider, "fetch_candles"):
+                candles = self.provider.fetch_candles(
+                    symbol,
+                    timeframe="m5",
+                    max_count=limit,
+                    since_ts=last_ts,
+                )
+            else:
+                candles = self.provider.get_candles(
+                    symbol,
+                    timeframe="m5",
+                    limit=limit,
+                    since_ts=last_ts,
+                )
+            fetch_ms = (time.perf_counter() - t_fetch) * 1000.0
             
             if candles:
                 if isinstance(candles[0], Candle):
                     cache_candles = candles_to_cache_dicts(candles)
                     market_cache.upsert_candles(symbol, cache_candles)
                     logger.info(f"Ingested {len(cache_candles)} candles for {symbol}. Last: {cache_candles[-1]['time']}")
+
+                    # Persist per-symbol marketdata for proof/forensics & backfill reuse.
+                    persist_enabled = (os.getenv("MARKETDATA_PERSIST") or "").strip().lower() in ("1", "true", "yes", "on")
+                    provider_name = str(getattr(self.provider, "name", "unknown")).upper()
+                    if persist_enabled or provider_name == "MASSIVE":
+                        massive_ticker: Optional[str] = None
+                        if provider_name == "MASSIVE":
+                            try:
+                                massive_ticker = to_massive_ticker(symbol)
+                            except Exception:
+                                massive_ticker = None
+                        written, path = store_append(symbol, "m5", cache_candles)
+                        log_ingest_event(
+                            logger,
+                            "fetch_and_persist",
+                            provider=provider_name,
+                            symbol=symbol,
+                            timeframe="m5",
+                            candles_count=int(written),
+                            requested_start=(last_ts.isoformat() if last_ts is not None else None),
+                            requested_end=requested_end_iso,
+                            persist_path=str(path),
+                            duration_ms=fetch_ms,
+                            extra={
+                                "internalSymbol": str(symbol).upper(),
+                                "massiveTicker": massive_ticker,
+                                "fetchedCandles": int(len(cache_candles)),
+                            },
+                        )
                 else:
                     market_cache.upsert_candles(symbol, candles)
                     logger.info(f"Ingested {len(candles)} candles for {symbol}. Last: {candles[-1]['time']}")
+
+                    persist_enabled = (os.getenv("MARKETDATA_PERSIST") or "").strip().lower() in ("1", "true", "yes", "on")
+                    provider_name = str(getattr(self.provider, "name", "unknown")).upper()
+                    if persist_enabled or provider_name == "MASSIVE":
+                        massive_ticker: Optional[str] = None
+                        if provider_name == "MASSIVE":
+                            try:
+                                massive_ticker = to_massive_ticker(symbol)
+                            except Exception:
+                                massive_ticker = None
+                        written, path = store_append(symbol, "m5", candles)
+                        log_ingest_event(
+                            logger,
+                            "fetch_and_persist",
+                            provider=provider_name,
+                            symbol=symbol,
+                            timeframe="m5",
+                            candles_count=int(written),
+                            requested_start=(last_ts.isoformat() if last_ts is not None else None),
+                            requested_end=requested_end_iso,
+                            persist_path=str(path),
+                            duration_ms=fetch_ms,
+                            extra={
+                                "internalSymbol": str(symbol).upper(),
+                                "massiveTicker": massive_ticker,
+                                "fetchedCandles": int(len(candles)),
+                            },
+                        )
             else:
                 logger.debug(f"No new candles for {symbol}")
 
-        except FetchPausedError:
-            # Circuit breaker open; avoid log spam. The IG client emits FETCH_PAUSED when it opens.
-            return
-                
         except Exception as e:
             msg = str(e)
             error_code: Optional[str] = None
             body_short: str = ""
 
-            # If it's an HTTPError, we can often inspect IG's errorCode.
+            # If it's an HTTPError, we can sometimes inspect a structured error payload.
             if isinstance(e, requests.exceptions.HTTPError):
                 resp = getattr(e, "response", None)
                 if resp is not None:
@@ -162,46 +219,37 @@ class DataIngestor:
 
             logger.warning(f"Failed to fetch {symbol}: {msg}")
 
-            # IG public API can block historical data after allowance is exceeded.
-            # Back off per-symbol to avoid hammering the API.
-            allowance_exceeded = error_code == "error.public-api.exceeded-account-historical-data-allowance" or (
-                "exceeded-account-historical-data-allowance" in msg
-            )
-            if allowance_exceeded:
-                # Longer cooldown is safer when allowance is exhausted.
-                self._cooldown_until[symbol] = asyncio.get_running_loop().time() + 60 * 60
-
-                # Optional: keep the system usable by filling cache from a fallback provider.
-                if self.fallback_provider is not None:
-                    try:
-                        if hasattr(self.fallback_provider, "fetch_candles"):
-                            candles = self.fallback_provider.fetch_candles(
-                                symbol,
-                                timeframe="m5",
-                                max_count=self.incremental_limit,
-                                since_ts=market_cache.get_last_timestamp(symbol),
+            # Optional: keep the system usable by filling cache from a fallback provider.
+            if self.fallback_provider is not None:
+                try:
+                    if hasattr(self.fallback_provider, "fetch_candles"):
+                        candles = self.fallback_provider.fetch_candles(
+                            symbol,
+                            timeframe="m5",
+                            max_count=self.incremental_limit,
+                            since_ts=market_cache.get_last_timestamp(symbol),
+                        )
+                    else:
+                        candles = self.fallback_provider.get_candles(
+                            symbol,
+                            timeframe="m5",
+                            limit=self.incremental_limit,
+                            since_ts=market_cache.get_last_timestamp(symbol),
+                        )
+                    if candles:
+                        if isinstance(candles[0], Candle):
+                            cache_candles = candles_to_cache_dicts(candles)
+                            market_cache.upsert_candles(symbol, cache_candles)
+                            logger.info(
+                                f"Fallback ingested {len(cache_candles)} candles for {symbol}. Last: {cache_candles[-1]['time']}"
                             )
                         else:
-                            candles = self.fallback_provider.get_candles(
-                                symbol,
-                                timeframe="m5",
-                                limit=self.incremental_limit,
-                                since_ts=market_cache.get_last_timestamp(symbol),
+                            market_cache.upsert_candles(symbol, candles)
+                            logger.info(
+                                f"Fallback ingested {len(candles)} candles for {symbol}. Last: {candles[-1]['time']}"
                             )
-                        if candles:
-                            if isinstance(candles[0], Candle):
-                                cache_candles = candles_to_cache_dicts(candles)
-                                market_cache.upsert_candles(symbol, cache_candles)
-                                logger.info(
-                                    f"Fallback ingested {len(cache_candles)} candles for {symbol}. Last: {cache_candles[-1]['time']}"
-                                )
-                            else:
-                                market_cache.upsert_candles(symbol, candles)
-                                logger.info(
-                                    f"Fallback ingested {len(candles)} candles for {symbol}. Last: {candles[-1]['time']}"
-                                )
-                    except Exception as fe:
-                        logger.warning(f"Fallback provider failed for {symbol}: {fe}")
+                except Exception as fe:
+                    logger.warning(f"Fallback provider failed for {symbol}: {fe}")
             # Exponential backoff logic could go here
             await self._sleep_interruptible(1)
 

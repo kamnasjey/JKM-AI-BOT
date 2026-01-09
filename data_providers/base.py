@@ -29,6 +29,7 @@ class DataProvider(ABC):
         max_count: int = 100,
         limit: Optional[int] = None,
         since_ts: Optional[datetime] = None,
+        until_ts: Optional[datetime] = None,
     ) -> List[Candle]:
         raise NotImplementedError
 

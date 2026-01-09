@@ -4,7 +4,7 @@ registry.py
 Detector registry for enable/disable mechanism.
 """
 
-from typing import Dict, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 from .base import BaseDetector, DetectorConfig
 from .break_retest import BreakRetestDetector

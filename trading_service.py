@@ -4,23 +4,12 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Union
 
-from ig_client import IGClient
 from config import WATCH_PAIRS
 from user_profile import get_profile
 from user_core_engine import scan_pair_with_profile_verbose
-from analyzer import analyze_pair_multi_tf_ig_v2
+from analyzer import analyze_pair_multi_tf_v2
 from market_overview import get_market_overview_text
 from ai_explainer import explain_signal_ganbayar
-
-_IG_CLIENT: Optional[IGClient] = None
-
-
-def _get_ig_client() -> IGClient:
-    """IG client-оо нэг л удаа үүсгээд cache-лэнэ."""
-    global _IG_CLIENT
-    if _IG_CLIENT is None:
-        _IG_CLIENT = IGClient.from_env()
-    return _IG_CLIENT
 
 
 def list_pairs() -> List[Dict[str, str]]:
@@ -30,7 +19,6 @@ def list_pairs() -> List[Dict[str, str]]:
         items.append(
             {
                 "symbol": p,
-                "epic_env": f"EPIC_{p.replace('/', '')}",
             }
         )
     return items
@@ -104,21 +92,7 @@ def get_tech_analysis(pair: str) -> Dict[str, Any]:
     """
     analyzer.py ашиглаад multi-TF technical текст буцаана.
     """
-    market_data_provider = os.getenv("MARKET_DATA_PROVIDER", "simulation").strip().lower()
-    if market_data_provider not in ("ig", "igmarkets", "ig_markets"):
-        return {
-            "error": "IG market data түр унтраалттай байна (MARKET_DATA_PROVIDER=simulation). Data авах хэсгээ дараа нь асаана.",
-        }
-
-    epic_env = f"EPIC_{pair.replace('/', '')}"
-    epic = os.getenv(epic_env, "").strip()
-    if not epic:
-        return {
-            "error": f"{epic_env} ENV тохируулагдаагүй байна (.env дээр EPIC_xxx нэм)."
-        }
-
-    ig = _get_ig_client()
-    text = analyze_pair_multi_tf_ig_v2(ig, epic, pair)
+    text = analyze_pair_multi_tf_v2(pair)
     return {"analysis_text": text}
 
 

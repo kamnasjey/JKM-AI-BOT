@@ -7,12 +7,14 @@ D1, H4, H1, M15 дээр үнэ хаашаа чиглэж байгаа,
 ерөнхий дүгнэлтийг Монгол хэлээр буцаана.
 
 Гол public функц:
-  analyze_pair_multi_tf_ig_v2(ig, epic, pair) -> str
+    analyze_pair_multi_tf_v2(pair) -> str
 """
 
 from __future__ import annotations
 from typing import List, Dict, Any
 from datetime import datetime
+
+from market_data_cache import market_cache
 
 
 def _parse_time(iso_str: str) -> datetime:
@@ -62,24 +64,22 @@ def _trend_to_mn(t: str) -> str:
     return "тодорхойгүй"
 
 
-def analyze_pair_multi_tf_ig_v2(ig, epic: str, pair: str) -> str:
+def analyze_pair_multi_tf_v2(pair: str) -> str:
+    """Use in-memory market cache to analyze D1/H4/H1/M15 trends.
+
+    Assumes the background ingestor is keeping `market_cache` warm with M5 candles.
     """
-    IG client, EPIC, pair-ийг аваад:
-    D1, H4, H1, M15 дээр анализ хийж Монгол текст буцаана.
-    """
-    # Candles татах
-    d1 = ig.get_candles(epic, "DAY", max_points=200)
-    h4 = ig.get_candles(epic, "HOUR_4", max_points=200)
-    h1 = ig.get_candles(epic, "HOUR", max_points=200)
-    m15 = ig.get_candles(epic, "MINUTE_15", max_points=200)
+    p = str(pair or "").strip().upper().replace("/", "").replace(" ", "")
+    if not p:
+        return "⚠ Pair хоосон байна."
+
+    d1 = market_cache.get_resampled(p, "D1")
+    h4 = market_cache.get_resampled(p, "H4")
+    h1 = market_cache.get_resampled(p, "H1")
+    m15 = market_cache.get_resampled(p, "M15")
 
     if not d1 or not h4 or not h1 or not m15:
-        return f"⚠ {pair} дээр хангалттай өгөгдөл авж чадсангүй."
-
-    # Time parse
-    for arr in (d1, h4, h1, m15):
-        for c in arr:
-            c["time"] = _parse_time(c["time"])
+        return f"⚠ {p} дээр хангалттай өгөгдөл cache-д алга байна. (Ingestor ажиллаж байгаа эсэхийг шалга)"
 
     d1_trend = _simple_trend(d1)
     h4_trend = _simple_trend(h4)
@@ -121,8 +121,8 @@ def analyze_pair_multi_tf_ig_v2(ig, epic: str, pair: str) -> str:
             reason.append("Үнэ дунд түвшнээс дээш хэсэгт байна.")
 
     text = []
-    text.append("📊 <b>ГАНБАЯР MULTI-TF IG ANALYZER (v2)</b>")
-    text.append(f"Хос: <b>{pair}</b>")
+    text.append("📊 <b>ГАНБАЯР MULTI-TF ANALYZER (v2)</b>")
+    text.append(f"Хос: <b>{p}</b>")
     text.append("")
     text.append("🕒 <b>D1</b>")
     text.append(f"  - Хандлага: {d1_trend} ({_trend_to_mn(d1_trend)})")
@@ -149,21 +149,24 @@ def analyze_pair_multi_tf_ig_v2(ig, epic: str, pair: str) -> str:
     return "\n".join(text)
 
 
-def analyze_pair_multi_tf_ig(ig, epic: str, pair: str) -> str:
-    return analyze_pair_multi_tf_ig_v2(ig, epic, pair)
+def analyze_pair_multi_tf(pair: str) -> str:
+    return analyze_pair_multi_tf_v2(pair)
 
 
 # --- New Structured Analyzer ---
-def get_setup_v2(ig, epic: str, pair: str) -> Dict[str, Any]:
+def get_setup_v2(pair: str) -> Dict[str, Any]:
     """
     Simulated structured output for Autopilot V1.
     In real V1, this should use `engine_blocks` to calculate precise entry/sl/tp.
     For now, we derive some basic logic similar to text logic but return dict.
     """
-    # ... logic reuse ...
-    d1 = ig.get_candles(epic, "DAY", max_points=200)
-    h4 = ig.get_candles(epic, "HOUR_4", max_points=200)
-    
+    p = str(pair or "").strip().upper().replace("/", "").replace(" ", "")
+    if not p:
+        return {}
+
+    d1 = market_cache.get_resampled(p, "D1")
+    h4 = market_cache.get_resampled(p, "H4")
+
     if not d1 or not h4:
         return {}
 
@@ -172,7 +175,7 @@ def get_setup_v2(ig, epic: str, pair: str) -> Dict[str, Any]:
     # We can just check trends
     d1_trend = _simple_trend(d1)
     h4_trend = _simple_trend(h4)
-    m15 = ig.get_candles(epic, "MINUTE_15", max_points=50) # fetch m15
+    m15 = market_cache.get_resampled(p, "M15")
     if not m15:
         return {}
     last_price = m15[-1]["close"]
@@ -183,7 +186,7 @@ def get_setup_v2(ig, epic: str, pair: str) -> Dict[str, Any]:
     # Valid setup ONLY if D1 Up + H4 Up -> BUY, or D1 Down + H4 Down -> SELL
     if d1_trend == "up" and h4_trend == "up":
         setup = {
-            "pair": pair,
+            "pair": p,
             "direction": "BUY",
             "timeframe": "M15",
             "entry": last_price,
@@ -194,7 +197,7 @@ def get_setup_v2(ig, epic: str, pair: str) -> Dict[str, Any]:
         }
     elif d1_trend == "down" and h4_trend == "down":
         setup = {
-            "pair": pair,
+            "pair": p,
             "direction": "SELL",
             "timeframe": "M15",
             "entry": last_price,
