@@ -162,3 +162,57 @@ NEXT:
 - Commit and push; then run Phase B proof (15 symbols × 30 days).
 IDEAS:
 - Tests 4/5 will pass in CI/container where pydantic is installed.
+
+===== 2026-01-09T11:46:50Z (AUTOPILOT SMOKE) =====
+RESULT: PASS
+FAIL_REASON: none
+NOW:
+  - CANDLES_ROWS(EURUSD m5)=1767
+  - health_ok=true
+  - manual_scan_ok=true
+NEXT:
+  - Monitor next 30min cycle; consider enabling full 15-symbol backfill.
+EVIDENCE_ENV:
+DATA_PROVIDER=PRESENT
+MASSIVE_BASE_URL=MISSING
+MASSIVE_API_KEY=PRESENT
+INTERNAL_API_KEY=PRESENT
+EVIDENCE_BACKFILL (last 60 lines):
+2026-01-09 19:46:45,743 [INFO] backfill_massive: Backfill start provider=MASSIVE symbols=1 tf=m5 years=2 chunk_days=7
+2026-01-09 19:46:45,743 [INFO] backfill_massive: Backfilling EURUSD tf=m5 from 2026-01-02T11:46:45.742944+00:00 to 2026-01-09T11:46:45.742944+00:00
+2026-01-09 19:46:46,442 [INFO] data_providers.normalize: PROVIDER_SHORT | provider=MASSIVE | received=100 | requested=500 | symbol=EURUSD | tf=m5
+2026-01-09 19:46:46,677 [INFO] data_providers.normalize: PROVIDER_SHORT | provider=MASSIVE | received=99 | requested=500 | symbol=EURUSD | tf=m5
+2026-01-09 19:46:46,914 [INFO] data_providers.normalize: PROVIDER_SHORT | provider=MASSIVE | received=99 | requested=500 | symbol=EURUSD | tf=m5
+2026-01-09 19:46:47,151 [INFO] data_providers.normalize: PROVIDER_SHORT | provider=MASSIVE | received=99 | requested=500 | symbol=EURUSD | tf=m5
+2026-01-09 19:46:47,379 [INFO] data_providers.normalize: PROVIDER_SHORT | provider=MASSIVE | received=15 | requested=500 | symbol=EURUSD | tf=m5
+2026-01-09 19:46:47,465 [INFO] backfill_massive: INGEST_DEBUG {'event': 'backfill_chunk', 'provider': 'MASSIVE', 'symbol': 'EURUSD', 'tf': 'm5', 'candles': 412, 'writtenRows': 412, 'ts': 1767959207, 'start': '2026-01-02T11:46:45.742944+00:00', 'end': '2026-01-09T11:46:45.742944+00:00', 'persist': 'state/marketdata/EURUSD/m5.csv.gz', 'ms': 1636.81, 'internalSymbol': 'EURUSD', 'massiveTicker': 'C:EURUSD', 'fetchedCandles': 412}
+2026-01-09 19:46:47,466 [INFO] backfill_massive: chunk EURUSD 2026-01-02..2026-01-09 fetched=412 wrote=412 ms=1636.8
+2026-01-09 19:46:47,466 [INFO] backfill_massive: Backfill complete total_written=412
+EVIDENCE_LOGS (last 120 lines):
+jkm_bot_backend  | 2026-01-09 19:46:49,414 [INFO] ScannerService: STRATEGY_READY | detector_params_count=0 | priority=50 | strategy_id=range_reversal_v1
+jkm_bot_backend  | 2026-01-09 19:46:49,414 [INFO] ScannerService: STRATEGY_VALIDATION_REPORT | enabled_count=1 | errors=[] | errors_count=0 | invalid_enabled_count=0 | path=config/strategies.json | schema_version=1 | warnings=[] | warnings_count=0
+jkm_bot_backend  | 2026-01-09 19:46:49,414 [INFO] ScannerService: STRATEGIES_LOADED | count=1 | path=config/strategies.json | unknown_detectors_count=0 | unknown_detectors_names=[] | unknown_detectors_strategies=[]
+jkm_bot_backend  | 2026-01-09 19:46:49,507 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:05:00+00:00 | path=state/marketdata/AUDJPY/m5.csv.gz | rows=408 | source=disk | symbol=AUDJPY | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,514 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:05:00+00:00 | path=state/marketdata/AUDUSD/m5.csv.gz | rows=408 | source=disk | symbol=AUDUSD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,518 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/BTCUSD/m5.csv.gz | rows=7 | source=disk | symbol=BTCUSD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,525 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/EURAUD/m5.csv.gz | rows=408 | source=disk | symbol=EURAUD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,531 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/EURCHF/m5.csv.gz | rows=412 | source=disk | symbol=EURCHF | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,538 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/EURGBP/m5.csv.gz | rows=408 | source=disk | symbol=EURGBP | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,545 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:49:00+00:00 | path=state/marketdata/EURJPY/m5.csv.gz | rows=412 | source=disk | symbol=EURJPY | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,572 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T11:41:00+00:00 | path=state/marketdata/EURUSD/m5.csv.gz | rows=1767 | source=disk | symbol=EURUSD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,578 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T11:21:00+00:00 | path=state/marketdata/GBPJPY/m5.csv.gz | rows=413 | source=disk | symbol=GBPJPY | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,584 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T11:21:00+00:00 | path=state/marketdata/GBPUSD/m5.csv.gz | rows=414 | source=disk | symbol=GBPUSD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,591 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T11:21:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=410 | source=disk | symbol=NZDUSD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,599 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:55:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=409 | source=disk | symbol=USDCAD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,606 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=411 | source=disk | symbol=USDCHF | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,612 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=411 | source=disk | symbol=USDJPY | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:49,618 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T10:35:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=6 | source=disk | symbol=XAUUSD | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:50,377 [INFO] data_providers.normalize: PROVIDER_SHORT | provider=MASSIVE | received=0 | requested=5 | symbol=AUDJPY | tf=m5
+jkm_bot_backend  | 2026-01-09 19:46:50,379 [INFO] ScannerService: SCAN_START | pairs=15 | scan_id=1767959210378-8dd3 | strategies_count=1 | ts=2026-01-09T19:46:50.378491 | users=1
+jkm_bot_backend  | 2026-01-09 19:46:50,409 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=137 | internal_reason=data_gap | ms_total=12.04 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=AUDJPY
+jkm_bot_backend  | 2026-01-09 19:46:50,422 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=137 | internal_reason=data_gap | ms_total=12.39 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=AUDUSD
+jkm_bot_backend  | 2026-01-09 19:46:50,461 [INFO] ScannerService: PAIR_NONE | have_h4=44 | have_m15=680 | internal_reason=data_gap | ms_total=38.66 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=BTCUSD
+jkm_bot_backend  | 2026-01-09 19:46:50,472 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=138 | internal_reason=data_gap | ms_total=10.93 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURAUD
+jkm_bot_backend  | 2026-01-09 19:46:50,482 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=141 | internal_reason=data_gap | ms_total=9.23 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURCHF
+jkm_bot_backend  | 2026-01-09 19:46:50,493 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=138 | internal_reason=data_gap | ms_total=10.48 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURGBP
+jkm_bot_backend  | 2026-01-09 19:46:50,506 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=142 | internal_reason=data_gap | ms_total=12.74 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURJPY
