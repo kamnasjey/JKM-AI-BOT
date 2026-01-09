@@ -17,7 +17,7 @@ if str(_REPO_ROOT) not in sys.path:
 from data_providers.factory import create_provider
 from data_providers.models import Candle, candles_to_cache_dicts
 from data_providers.massive_provider import to_massive_ticker
-from core.marketdata_store import append as store_append
+from core.marketdata_store import upsert as store_upsert
 from core.ingest_debug import log_ingest_event
 
 import logging
@@ -80,6 +80,47 @@ def _canon_tf(timeframe: str) -> str:
     return tf or "m5"
 
 
+def _tf_seconds(timeframe: str) -> int:
+    tf = _canon_tf(timeframe)
+    if tf.startswith("m") and tf[1:].isdigit():
+        return int(tf[1:]) * 60
+    if tf.startswith("h") and tf[1:].isdigit():
+        return int(tf[1:]) * 3600
+    if tf.startswith("d") and tf[1:].isdigit():
+        return int(tf[1:]) * 86400
+    return 300
+
+
+def _validate_candles(candles: List[Candle], timeframe: str) -> Dict[str, int]:
+    """Lightweight validation (warn-only).
+
+    Checks:
+    - duplicates
+    - gaps vs expected interval
+    """
+    out = {"duplicates": 0, "gaps": 0, "interval_mismatch": 0}
+    if not candles:
+        return out
+    expected = _tf_seconds(timeframe)
+    seen = set()
+    prev = None
+    for c in candles:
+        ts = c.ts
+        if ts in seen:
+            out["duplicates"] += 1
+        seen.add(ts)
+        if prev is not None:
+            dt = int((ts - prev).total_seconds())
+            if dt != expected:
+                # Count large gaps separately; small mismatches as interval_mismatch.
+                if dt > int(expected * 1.5):
+                    out["gaps"] += max(1, int(round(dt / expected)) - 1)
+                else:
+                    out["interval_mismatch"] += 1
+        prev = ts
+    return out
+
+
 def _chunk_ranges(start: datetime, end: datetime, *, chunk_days: int) -> Iterable[tuple[datetime, datetime]]:
     cur = start
     step = timedelta(days=max(1, int(chunk_days)))
@@ -97,6 +138,7 @@ def run_backfill(
     days: Optional[int],
     chunk_days: int,
     validate_tickers: bool,
+    validate_output: bool,
 ) -> int:
     provider = create_provider(name="massive")
 
@@ -135,8 +177,8 @@ def run_backfill(
         logger.info("Backfilling %s tf=%s from %s to %s", sym, tf, start.isoformat(), end.isoformat())
         for (a, b) in _chunk_ranges(start, end, chunk_days=chunk_days):
             t0 = time.perf_counter()
-            # conservative limit estimate for 5m candles
-            est = int((b - a).total_seconds() / 300) + 20
+            # conservative limit estimate based on timeframe seconds
+            est = int((b - a).total_seconds() / float(_tf_seconds(tf))) + 20
             candles: List[Candle] = provider.fetch_candles(
                 sym,
                 timeframe=str(tf),
@@ -147,8 +189,22 @@ def run_backfill(
             )
             dt_ms = (time.perf_counter() - t0) * 1000.0
 
+            if validate_output:
+                stats = _validate_candles(candles or [], tf)
+                if any(int(v) > 0 for v in stats.values()):
+                    logger.warning(
+                        "VALIDATE_WARN %s tf=%s duplicates=%d gaps=%d interval_mismatch=%d",
+                        sym,
+                        tf,
+                        int(stats["duplicates"]),
+                        int(stats["gaps"]),
+                        int(stats["interval_mismatch"]),
+                    )
+                else:
+                    logger.info("VALIDATE_OK %s tf=%s count=%d", sym, tf, int(len(candles or [])))
+
             cache_dicts = candles_to_cache_dicts(candles) if candles else []
-            written, path = store_append(sym, tf, cache_dicts)
+            written, path = store_upsert(sym, tf, cache_dicts, provider=getattr(provider, "name", None))
             total_written += int(written)
 
             massive_ticker: Optional[str] = None
@@ -192,11 +248,19 @@ def run_backfill(
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Backfill Massive OHLC into state/marketdata")
     ap.add_argument("--symbols", nargs="*", default=None, help="Symbols (default from config/massive_symbols.json)")
-    ap.add_argument("--timeframe", default="5m", help="Timeframe, e.g. 5m")
+    ap.add_argument("--timeframe", dest="timeframe", default="5m", help="Timeframe, e.g. m5/5m")
+    # Alias for operator convenience (must not override the primary default).
+    ap.add_argument("--tf", dest="timeframe", default=argparse.SUPPRESS, help="Alias for --timeframe")
     ap.add_argument("--years", type=int, default=2, help="How many years to backfill")
     ap.add_argument("--days", type=int, default=None, help="Override: backfill last N days")
     ap.add_argument("--chunk-days", type=int, default=7, help="Days per request chunk")
     ap.add_argument("--validate-tickers", action="store_true", help="Validate Massive tickers via ref endpoint (best-effort)")
+    ap.add_argument(
+        "--validate",
+        dest="validate_output",
+        action="store_true",
+        help="Validate candle spacing/dupes (warn-only)",
+    )
     args = ap.parse_args(argv)
 
     syms = [s.upper().strip() for s in (args.symbols or []) if isinstance(s, str) and s.strip()]
@@ -210,6 +274,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         days=(int(args.days) if args.days is not None else None),
         chunk_days=int(args.chunk_days),
         validate_tickers=bool(args.validate_tickers),
+        validate_output=bool(getattr(args, "validate_output", False)),
     )
 
 

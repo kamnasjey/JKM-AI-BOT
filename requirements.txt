@@ -5,6 +5,7 @@ requests
 openai
 python-dotenv
 fastapi
+pydantic
 uvicorn[standard]
 email-validator
 pytest

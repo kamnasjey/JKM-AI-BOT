@@ -100,19 +100,62 @@ def load_meta(symbol: str, timeframe: str) -> MarketDataMeta:
     return MarketDataMeta(last_ts=last, rows_count=max(0, rows))
 
 
-def save_meta(symbol: str, timeframe: str, *, last_ts: Optional[datetime], rows_count: int) -> None:
+def save_meta(
+    symbol: str,
+    timeframe: str,
+    *,
+    last_ts: Optional[datetime],
+    rows_count: int,
+    first_ts: Optional[datetime] = None,
+    provider: Optional[str] = None,
+) -> None:
     p = _meta_path(symbol, timeframe)
     p.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
+        # Keep meta schema version stable for v0.1; additional keys are optional.
         "version": 1,
         "symbol": str(symbol).upper(),
         "timeframe": _canon_tf(timeframe),
+        "provider": (str(provider).upper() if provider else None),
+        "first_ts": _dt_to_iso(first_ts) if first_ts is not None else None,
         "last_ts": _dt_to_iso(last_ts) if last_ts is not None else None,
         "rows_count": int(max(0, int(rows_count))),
         "updated_at": _dt_to_iso(datetime.now(timezone.utc)),
     }
     atomic_write_text(p, json.dumps(payload, ensure_ascii=False))
+
+
+def _atomic_replace(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src.replace(dst)
+
+
+def _write_full_gz_csv(path: Path, candles: List[Dict[str, Any]]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["time", "open", "high", "low", "close", "volume"])
+        writer.writeheader()
+        for c in candles:
+            t = c.get("time")
+            if not isinstance(t, datetime):
+                continue
+            tt = t
+            if tt.tzinfo is None:
+                tt = tt.replace(tzinfo=timezone.utc)
+            tt = tt.astimezone(timezone.utc)
+            row = {
+                "time": _dt_to_iso(tt),
+                "open": str(float(c.get("open"))),
+                "high": str(float(c.get("high"))),
+                "low": str(float(c.get("low"))),
+                "close": str(float(c.get("close"))),
+                "volume": "",
+            }
+            if c.get("volume") is not None:
+                row["volume"] = str(float(c.get("volume")))
+            writer.writerow(row)
+    _atomic_replace(tmp, path)
 
 
 def iter_candles(symbol: str, timeframe: str) -> Iterator[Dict[str, Any]]:
@@ -249,3 +292,77 @@ def append(symbol: str, timeframe: str, candles: Iterable[Dict[str, Any]]) -> Tu
 
     save_meta(sym, tf, last_ts=new_last, rows_count=rows_count)
     return (len(rows), str(p))
+
+
+def upsert(
+    symbol: str,
+    timeframe: str,
+    candles: Iterable[Dict[str, Any]],
+    *,
+    provider: Optional[str] = None,
+) -> Tuple[int, str]:
+    """Upsert candles into the per-symbol store.
+
+    Guarantees:
+    - ascending timestamps
+    - no duplicate timestamps (last-one-wins)
+
+    Returns (new_timestamps_added, path).
+    """
+
+    sym = str(symbol).upper()
+    tf = _canon_tf(timeframe)
+    p = _data_path(sym, tf)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    existing = list(iter_candles(sym, tf))
+    by_ts: Dict[datetime, Dict[str, Any]] = {}
+    for c in existing:
+        t = c.get("time")
+        if isinstance(t, datetime):
+            by_ts[t] = c
+
+    before = len(by_ts)
+
+    for c in candles:
+        if not isinstance(c, dict):
+            continue
+        t = c.get("time")
+        if not isinstance(t, datetime):
+            continue
+        tt = t
+        if tt.tzinfo is None:
+            tt = tt.replace(tzinfo=timezone.utc)
+        tt = tt.astimezone(timezone.utc)
+        try:
+            by_ts[tt] = {
+                "time": tt,
+                "open": float(c.get("open")),
+                "high": float(c.get("high")),
+                "low": float(c.get("low")),
+                "close": float(c.get("close")),
+                **({"volume": float(c.get("volume"))} if c.get("volume") is not None else {}),
+            }
+        except Exception:
+            continue
+
+    keys = sorted(by_ts.keys())
+    merged = [by_ts[k] for k in keys]
+
+    if merged:
+        _write_full_gz_csv(p, merged)
+        first_ts = merged[0]["time"]
+        last_ts = merged[-1]["time"]
+        save_meta(
+            sym,
+            tf,
+            first_ts=first_ts,
+            last_ts=last_ts,
+            rows_count=len(merged),
+            provider=provider,
+        )
+    else:
+        save_meta(sym, tf, first_ts=None, last_ts=None, rows_count=0, provider=provider)
+
+    after = len(by_ts)
+    return (max(0, after - before), str(p))

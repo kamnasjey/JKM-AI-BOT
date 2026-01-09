@@ -108,19 +108,41 @@ class DataIngestor:
             
             t_fetch = time.perf_counter()
             requested_end_iso = datetime.now(timezone.utc).isoformat()
+
+            # When doing incremental fetches, request a small lookback window so we can
+            # retrieve ~N recent candles (helps with provider delays/gaps/dup-dedupe).
+            since_fetch = last_ts
+            if last_ts is not None:
+                since_fetch = last_ts - timedelta(minutes=5 * int(limit) * 3)
+
+            provider_name = str(getattr(self.provider, "name", "unknown")).upper()
             if hasattr(self.provider, "fetch_candles"):
-                candles = self.provider.fetch_candles(
-                    symbol,
-                    timeframe="m5",
-                    max_count=limit,
-                    since_ts=last_ts,
-                )
+                # Massive: for small incremental pulls, prefer a "most recent N" request.
+                # This avoids fetching the oldest N bars from a lookback window.
+                if provider_name == "MASSIVE" and last_ts is not None and int(limit) <= 50:
+                    candles = self.provider.fetch_candles(
+                        symbol,
+                        timeframe="m5",
+                        max_count=limit,
+                        limit=limit,
+                        since_ts=None,
+                        until_ts=datetime.now(timezone.utc),
+                    )
+                else:
+                    candles = self.provider.fetch_candles(
+                        symbol,
+                        timeframe="m5",
+                        max_count=limit,
+                        limit=limit,
+                        since_ts=since_fetch,
+                        until_ts=datetime.now(timezone.utc),
+                    )
             else:
                 candles = self.provider.get_candles(
                     symbol,
                     timeframe="m5",
                     limit=limit,
-                    since_ts=last_ts,
+                    since_ts=since_fetch,
                 )
             fetch_ms = (time.perf_counter() - t_fetch) * 1000.0
             
@@ -132,7 +154,6 @@ class DataIngestor:
 
                     # Persist per-symbol marketdata for proof/forensics & backfill reuse.
                     persist_enabled = (os.getenv("MARKETDATA_PERSIST") or "").strip().lower() in ("1", "true", "yes", "on")
-                    provider_name = str(getattr(self.provider, "name", "unknown")).upper()
                     if persist_enabled or provider_name == "MASSIVE":
                         massive_ticker: Optional[str] = None
                         if provider_name == "MASSIVE":
@@ -156,6 +177,7 @@ class DataIngestor:
                                 "internalSymbol": str(symbol).upper(),
                                 "massiveTicker": massive_ticker,
                                 "fetchedCandles": int(len(cache_candles)),
+                                "writtenRows": int(written),
                             },
                         )
                 else:
@@ -163,7 +185,6 @@ class DataIngestor:
                     logger.info(f"Ingested {len(candles)} candles for {symbol}. Last: {candles[-1]['time']}")
 
                     persist_enabled = (os.getenv("MARKETDATA_PERSIST") or "").strip().lower() in ("1", "true", "yes", "on")
-                    provider_name = str(getattr(self.provider, "name", "unknown")).upper()
                     if persist_enabled or provider_name == "MASSIVE":
                         massive_ticker: Optional[str] = None
                         if provider_name == "MASSIVE":
@@ -187,6 +208,7 @@ class DataIngestor:
                                 "internalSymbol": str(symbol).upper(),
                                 "massiveTicker": massive_ticker,
                                 "fetchedCandles": int(len(candles)),
+                                "writtenRows": int(written),
                             },
                         )
             else:
@@ -218,6 +240,15 @@ class DataIngestor:
                 msg = f"{msg} | body={body_short}"
 
             logger.warning(f"Failed to fetch {symbol}: {msg}")
+
+            # Basic 429 cooldown handling (best-effort) to avoid hammering.
+            if "429" in msg or "rate" in msg.lower():
+                now_ts = asyncio.get_running_loop().time()
+                prev = float(self._cooldown_until.get(symbol) or 0.0)
+                # Increase cooldown up to 5 minutes.
+                next_cd = max(prev, now_ts) + 60.0
+                next_cd = min(next_cd, now_ts + 300.0)
+                self._cooldown_until[symbol] = float(next_cd)
 
             # Optional: keep the system usable by filling cache from a fallback provider.
             if self.fallback_provider is not None:

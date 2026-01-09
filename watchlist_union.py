@@ -37,6 +37,27 @@ def _load_massive_watchlist() -> List[str]:
     out = sorted(list(dict.fromkeys([x for x in out if x])))
     return out
 
+
+def _hard_default_massive_watchlist() -> List[str]:
+    # Hard default per v0.1 spec (15 instruments)
+    return [
+        "EURUSD",
+        "USDJPY",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "USDCHF",
+        "NZDUSD",
+        "EURJPY",
+        "GBPJPY",
+        "EURGBP",
+        "AUDJPY",
+        "EURAUD",
+        "EURCHF",
+        "XAUUSD",
+        "BTCUSD",
+    ]
+
 def get_union_watchlist(max_per_user: int = 5) -> List[str]:
     """
     Scans all users, reads their active watchlist (max 5),
@@ -46,8 +67,7 @@ def get_union_watchlist(max_per_user: int = 5) -> List[str]:
     provider = (os.getenv("DATA_PROVIDER") or os.getenv("MARKET_DATA_PROVIDER") or "").strip().lower()
     if provider in ("massive", "massiveio", "massive_io"):
         wl = _load_massive_watchlist()
-        if wl:
-            return wl
+        return wl if wl else _hard_default_massive_watchlist()
 
     unique_symbols: Set[str] = set()
     

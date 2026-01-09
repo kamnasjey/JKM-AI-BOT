@@ -445,7 +445,9 @@ class ScannerService:
             ).strip().lower()
             if env_provider_pre in ("massive", "massiveio", "massive_io"):
                 from core.marketdata_store import load_tail
+                from core.marketdata_store import _data_path as _md_path  # type: ignore
                 from watchlist_union import get_union_watchlist
+                from core.ingest_debug import ingest_debug_enabled
 
                 syms = get_union_watchlist(max_per_user=5)
                 loaded = 0
@@ -454,6 +456,21 @@ class ScannerService:
                     if items:
                         market_cache.upsert_candles(sym, items)
                         loaded += 1
+                        if ingest_debug_enabled():
+                            try:
+                                last_ts = items[-1].get("time")
+                                log_kv(
+                                    logger,
+                                    "MARKETDATA_LOAD",
+                                    source="disk",
+                                    symbol=str(sym).upper(),
+                                    tf="m5",
+                                    rows=int(len(items)),
+                                    path=str(_md_path(sym, "m5")),
+                                    last_ts=(last_ts.isoformat() if hasattr(last_ts, "isoformat") else None),
+                                )
+                            except Exception:
+                                pass
                 if loaded:
                     logger.info(f"Preloaded marketdata_store m5 for {loaded} symbols into cache")
         except Exception as e:
@@ -609,6 +626,32 @@ class ScannerService:
         ig_before = None
 
         users = list_users()
+        if not users:
+            try:
+                from watchlist_union import get_union_watchlist
+
+                wl = get_union_watchlist(max_per_user=15)
+            except Exception:
+                wl = []
+
+            # Safety: never allow empty universe in headless mode.
+            if not wl:
+                try:
+                    import config as _cfg
+
+                    wl = list(getattr(_cfg, "WATCH_PAIRS", []) or [])
+                except Exception:
+                    wl = []
+
+            # Default user: allows scanning to run in headless/VPS mode.
+            users = [
+                {
+                    "user_id": "default",
+                    "name": "Default",
+                    "telegram_handle": "",
+                    "watch_pairs": wl,
+                }
+            ]
         pairs_count = 0
         try:
             for u in users:
@@ -2006,7 +2049,6 @@ class ScannerService:
                         if getattr(signal, "rr", 0.0) < 2.0:
                             shadow_score *= 0.8
                         
-                        from engine.utils.logging_utils import log_kv
                         log_kv(
                             logger,
                             "METRICS_SHADOW_COMPARE",

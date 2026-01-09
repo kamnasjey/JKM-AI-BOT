@@ -141,6 +141,26 @@ def health():
     signals_file = state_dir / "signals.jsonl"
     signals_exists = signals_file.exists()
     signals_lines_estimate = _estimate_lines_fast(signals_file) if signals_exists else 0
+
+    # Cache readiness: best-effort snapshot of in-memory market cache.
+    cache_ready = False
+    cache_note = "not_loaded"
+    cache_symbols = 0
+    try:
+        from market_data_cache import market_cache  # local module, no external deps
+
+        syms = market_cache.get_all_symbols()
+        cache_symbols = int(len(syms))
+        cache_ready = cache_symbols > 0
+        cache_note = "ok" if cache_ready else "empty"
+    except Exception:
+        cache_ready = False
+        cache_note = "unavailable"
+        cache_symbols = 0
+
+    # DB readiness: v0.1 backend does not require a DB.
+    db_ready = True
+    db_note = "not_configured"
     return {
         "ok": True,
         "ts": int(time.time()),
@@ -154,8 +174,8 @@ def health():
         "state_writable": writable,
         "signals_file_exists": bool(signals_exists),
         "signals_lines_estimate": int(signals_lines_estimate),
-        "cache": {"ready": False, "note": "placeholder"},
-        "db": {"ready": False, "note": "placeholder"},
+        "cache": {"ready": bool(cache_ready), "note": str(cache_note), "symbols": int(cache_symbols)},
+        "db": {"ready": bool(db_ready), "note": str(db_note)},
     }
 
 @app.get("/api/signals")

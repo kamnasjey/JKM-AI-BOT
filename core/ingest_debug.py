@@ -39,7 +39,10 @@ def log_ingest_event(
         "provider": str(provider),
         "symbol": str(symbol).upper(),
         "tf": str(timeframe),
+        # Back-compat: keep `candles` but make semantics explicit.
+        # `candles` historically meant "written" in our pipeline.
         "candles": int(candles_count),
+        "writtenRows": int(candles_count),
         "ts": int(time.time()),
     }
     if requested_start:

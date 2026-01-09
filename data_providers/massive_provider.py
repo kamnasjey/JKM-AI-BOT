@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 import logging
+import random
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
@@ -52,6 +53,27 @@ def _dt_to_ms(dt: datetime) -> int:
     return int(dt.astimezone(timezone.utc).timestamp() * 1000)
 
 
+def _sleep_backoff_s(attempt: int, *, base: float = 0.5, cap: float = 12.0) -> float:
+    # Exponential backoff with jitter.
+    raw = min(cap, base * (2 ** max(0, int(attempt))))
+    return max(0.0, raw * (0.7 + (random.random() * 0.6)))
+
+
+def _retry_after_s(resp: requests.Response) -> Optional[float]:
+    """Parse Retry-After header (seconds or HTTP-date)."""
+    try:
+        ra = (resp.headers.get("Retry-After") or "").strip()
+        if not ra:
+            return None
+        # Most providers return integer seconds.
+        if ra.isdigit():
+            return float(int(ra))
+        # HTTP-date parsing is intentionally omitted (keep deps minimal).
+        return None
+    except Exception:
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class MassiveConfig:
     base_url: str
@@ -64,6 +86,7 @@ class MassiveConfig:
     min_delay_s: float
     auth_header: str
     auth_prefix: str
+    page_limit: int
 
 
 _FOREX_AND_METALS: set[str] = {
@@ -158,6 +181,7 @@ class MassiveDataProvider(DataProvider):
                 min_delay_s=_env_float("MASSIVE_MIN_DELAY_S", 0.2),
                 auth_header=_env("MASSIVE_AUTH_HEADER", "Authorization"),
                 auth_prefix=_env("MASSIVE_AUTH_PREFIX", "Bearer"),
+                page_limit=_env_int("MASSIVE_PAGE_LIMIT", 500),
             )
 
         self._cfg = config
@@ -271,6 +295,17 @@ class MassiveDataProvider(DataProvider):
                     return [c for c in v if isinstance(c, dict)]
         return []
 
+    def _tf_seconds(self, tf: str) -> int:
+        tfc = _canon_tf(tf)
+        if tfc.startswith("m") and tfc[1:].isdigit():
+            return int(tfc[1:]) * 60
+        if tfc.startswith("h") and tfc[1:].isdigit():
+            return int(tfc[1:]) * 3600
+        if tfc.startswith("d") and tfc[1:].isdigit():
+            return int(tfc[1:]) * 86400
+        # fallback to 5m
+        return 300
+
     def _tf_to_aggs(self, tf: str) -> tuple[int, str]:
         """Map canonical tf to Polygon-style (multiplier, timespan)."""
 
@@ -310,119 +345,186 @@ class MassiveDataProvider(DataProvider):
         if until_ts is None:
             until_ts = datetime.now(timezone.utc)
 
-        url: str
-        params: Dict[str, Any]
-        if is_legacy_candles:
-            url = f"{self._cfg.base_url}{candles_path}"
-            params = {
-                "symbol": massive_ticker,
-                "timeframe": str(tf),
-                "limit": int(eff_limit),
-            }
-            if since_ts is not None:
-                params["start"] = _dt_to_iso(since_ts)
-            if until_ts is not None:
-                params["end"] = _dt_to_iso(until_ts)
-        else:
-            mult, span = self._tf_to_aggs(tf)
-            if since_ts is None:
-                # Best-effort: infer start from limit.
-                seconds_per_bar = {
-                    "minute": 60,
-                    "hour": 3600,
-                    "day": 86400,
-                }.get(span, 60) * max(1, int(mult))
-                since_ts = until_ts - timedelta(seconds=int(eff_limit) * int(seconds_per_bar))
+        if since_ts is not None:
+            if since_ts.tzinfo is None:
+                since_ts = since_ts.replace(tzinfo=timezone.utc)
+            since_ts = since_ts.astimezone(timezone.utc)
+        if until_ts.tzinfo is None:
+            until_ts = until_ts.replace(tzinfo=timezone.utc)
+        until_ts = until_ts.astimezone(timezone.utc)
 
-            start_ms = _dt_to_ms(since_ts)
-            end_ms = _dt_to_ms(until_ts)
-            base = candles_path.rstrip("/")
-            url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_ms}/{end_ms}"
-            params = {
-                "adjusted": "true",
-                # Use newest-first so incremental/backfill runs can append beyond meta.last_ts.
-                "sort": "desc",
-                "limit": int(eff_limit),
-            }
+        def _fetch_once(
+            *,
+            start: Optional[datetime],
+            end: datetime,
+            per_request_limit: int,
+        ) -> List[Candle]:
+            url: str
+            params: Dict[str, Any]
 
-        last_err: Optional[Exception] = None
-        for attempt in range(max(1, int(self._cfg.retries))):
-            try:
-                self._rate_limit()
-                resp = self._session.get(
-                    url,
-                    params=params,
-                    headers=self._headers(),
-                    timeout=float(self._cfg.timeout_s),
-                )
-                resp.raise_for_status()
-                payload = resp.json()
-                raw: List[Dict[str, Any]] = []
+            if is_legacy_candles:
+                url = f"{self._cfg.base_url}{candles_path}"
+                params = {
+                    "symbol": massive_ticker,
+                    "timeframe": str(tf),
+                    "limit": int(per_request_limit),
+                }
+                if start is not None:
+                    params["start"] = _dt_to_iso(start)
+                params["end"] = _dt_to_iso(end)
+            else:
+                mult, span = self._tf_to_aggs(tf)
+                use_start = start
+                if use_start is None:
+                    # Best-effort: infer start from limit.
+                    # Use a wider window than N*tf to tolerate provider gaps/delays while
+                    # still returning only `limit` bars (most recent, due to sort=desc).
+                    use_start = end - timedelta(seconds=int(per_request_limit) * int(self._tf_seconds(tf)) * 4)
+                start_ms = _dt_to_ms(use_start)
+                end_ms = _dt_to_ms(end)
+                base = candles_path.rstrip("/")
+                url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_ms}/{end_ms}"
+                params = {
+                    "adjusted": "true",
+                    # Prefer newest-first so small `limit` calls return the most recent bars.
+                    # Normalization sorts ascending afterward.
+                    "sort": "desc",
+                    "limit": int(per_request_limit),
+                }
 
-                if is_legacy_candles:
-                    items = self._extract_candles_list(payload)
-                    for it in items:
-                        ts = self._parse_ts(it.get("time") or it.get("ts") or it.get("timestamp"))
-                        if ts is None:
-                            continue
-                        try:
-                            raw.append(
-                                {
-                                    "time": ts,
-                                    "open": float(it.get("open")),
-                                    "high": float(it.get("high")),
-                                    "low": float(it.get("low")),
-                                    "close": float(it.get("close")),
-                                    **({"volume": it.get("volume")} if it.get("volume") is not None else {}),
-                                }
-                            )
-                        except Exception:
-                            continue
-                else:
-                    # Polygon-style aggregates: {"results": [{"t": ms, "o":..., "h":..., "l":..., "c":..., "v":...}, ...]}
-                    items = []
-                    if isinstance(payload, dict):
-                        v = payload.get("results")
-                        if isinstance(v, list):
-                            items = [x for x in v if isinstance(x, dict)]
+            last_err: Optional[Exception] = None
+            for attempt in range(max(1, int(self._cfg.retries))):
+                try:
+                    self._rate_limit()
+                    resp = self._session.get(
+                        url,
+                        params=params,
+                        headers=self._headers(),
+                        timeout=float(self._cfg.timeout_s),
+                    )
+                    if resp.status_code == 429:
+                        wait_s = _retry_after_s(resp)
+                        if wait_s is None:
+                            wait_s = _sleep_backoff_s(attempt, base=0.8, cap=20.0)
+                        logger.warning(
+                            "MASSIVE_HTTP_RETRY status=429 attempt=%d wait_s=%.2f symbol=%s tf=%s",
+                            int(attempt + 1),
+                            float(wait_s),
+                            str(symbol).upper(),
+                            str(tf),
+                        )
+                        time.sleep(wait_s)
+                        continue
 
-                    for it in items:
-                        ts = self._parse_ts(it.get("t") or it.get("time") or it.get("ts") or it.get("timestamp"))
-                        if ts is None:
-                            continue
-                        try:
-                            raw.append(
-                                {
-                                    "time": ts,
-                                    "open": float(it.get("o")),
-                                    "high": float(it.get("h")),
-                                    "low": float(it.get("l")),
-                                    "close": float(it.get("c")),
-                                    **({"volume": it.get("v")} if it.get("v") is not None else {}),
-                                }
-                            )
-                        except Exception:
-                            continue
+                    # Retry 5xx with backoff.
+                    if 500 <= int(resp.status_code) <= 599:
+                        wait_s = _sleep_backoff_s(attempt, base=0.6, cap=12.0)
+                        logger.warning(
+                            "MASSIVE_HTTP_RETRY status=%d attempt=%d wait_s=%.2f symbol=%s tf=%s",
+                            int(resp.status_code),
+                            int(attempt + 1),
+                            float(wait_s),
+                            str(symbol).upper(),
+                            str(tf),
+                        )
+                        time.sleep(wait_s)
+                        continue
 
-                if since_ts is not None:
-                    raw = [c for c in raw if c.get("time") and c["time"] > since_ts]
-                if until_ts is not None:
-                    raw = [c for c in raw if c.get("time") and c["time"] <= until_ts]
+                    resp.raise_for_status()
+                    payload = resp.json()
+                    raw: List[Dict[str, Any]] = []
 
-                # normalize_candles expects list[dict], but tolerates datetime `time`.
-                return normalize_candles(
-                    raw,
-                    provider=self.name,
-                    symbol=str(symbol).upper(),
-                    timeframe=str(tf),
-                    requested_limit=eff_limit,
-                )
-            except Exception as e:
-                last_err = e
-                # Simple backoff; do not log secrets.
-                time.sleep(min(2.0 * (attempt + 1), 6.0))
-                continue
+                    if is_legacy_candles:
+                        items = self._extract_candles_list(payload)
+                        for it in items:
+                            ts = self._parse_ts(it.get("time") or it.get("ts") or it.get("timestamp"))
+                            if ts is None:
+                                continue
+                            try:
+                                raw.append(
+                                    {
+                                        "time": ts,
+                                        "open": float(it.get("open")),
+                                        "high": float(it.get("high")),
+                                        "low": float(it.get("low")),
+                                        "close": float(it.get("close")),
+                                        **({"volume": it.get("volume")} if it.get("volume") is not None else {}),
+                                    }
+                                )
+                            except Exception:
+                                continue
+                    else:
+                        items = []
+                        if isinstance(payload, dict):
+                            v = payload.get("results")
+                            if isinstance(v, list):
+                                items = [x for x in v if isinstance(x, dict)]
 
-        if last_err is not None:
-            raise last_err
-        return []
+                        for it in items:
+                            ts = self._parse_ts(it.get("t") or it.get("time") or it.get("ts") or it.get("timestamp"))
+                            if ts is None:
+                                continue
+                            try:
+                                raw.append(
+                                    {
+                                        "time": ts,
+                                        "open": float(it.get("o")),
+                                        "high": float(it.get("h")),
+                                        "low": float(it.get("l")),
+                                        "close": float(it.get("c")),
+                                        **({"volume": it.get("v")} if it.get("v") is not None else {}),
+                                    }
+                                )
+                            except Exception:
+                                continue
+
+                    if start is not None:
+                        raw = [c for c in raw if c.get("time") and c["time"] >= start]
+                    raw = [c for c in raw if c.get("time") and c["time"] <= end]
+
+                    normalized = normalize_candles(
+                        raw,
+                        provider=self.name,
+                        symbol=str(symbol).upper(),
+                        timeframe=str(tf),
+                        requested_limit=per_request_limit,
+                    )
+                    # Ensure callers always get ascending candles.
+                    return sorted(normalized, key=lambda c: c.ts)
+                except Exception as e:
+                    last_err = e
+                    time.sleep(_sleep_backoff_s(attempt, base=0.4, cap=6.0))
+                    continue
+
+            if last_err is not None:
+                raise last_err
+            return []
+
+        # If caller specified a range, page over the range to overcome per-request caps.
+        if since_ts is not None:
+            page_limit = max(50, int(self._cfg.page_limit))
+            bar_s = self._tf_seconds(tf)
+            window = timedelta(seconds=int(bar_s) * int(page_limit))
+
+            out: List[Candle] = []
+            cur = since_ts
+            # Walk forward in time; each request is bounded by window and capped by page_limit.
+            while cur < until_ts:
+                nxt = min(until_ts, cur + window)
+                out.extend(_fetch_once(start=cur, end=nxt, per_request_limit=page_limit))
+                # Advance by window; safety to avoid infinite loops.
+                if nxt <= cur:
+                    break
+                cur = nxt
+
+            # Deduplicate + sort (normalize already sorts asc, but across pages we recheck)
+            by_ts: Dict[datetime, Candle] = {c.ts: c for c in out}
+            merged = [by_ts[t] for t in sorted(by_ts.keys())]
+
+            # If caller asked for a specific count (e.g. warmup), trim from the end.
+            if eff_limit and len(merged) > eff_limit:
+                merged = merged[-int(eff_limit) :]
+            return merged
+
+        # No explicit since_ts: fetch once based on limit.
+        return _fetch_once(start=None, end=until_ts, per_request_limit=max(1, int(eff_limit)))

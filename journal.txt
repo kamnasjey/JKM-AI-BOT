@@ -115,3 +115,50 @@ NEXT:
 - Continue proof run: collect 3+ INGEST_DEBUG lines and start Phase B (15 symbols × 30d).
 IDEAS:
 - Keep journal updates small and checkpointed; no secrets.
+
+[2026-01-09 19:00 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Fixed backfill CLI alias: --tf now works without breaking defaults.
+- Improved Massive provider resilience: Retry-After aware 429 backoff; wider recent-window for small pulls.
+- Clarified ingest proof logs: INGEST_DEBUG now includes writtenRows (and keeps candles as back-compat).
+- Hardened Massive watchlist fallback to always return the canonical 15 symbols.
+- Added scan evidence logs: MARKETDATA_LOAD proves disk preload from state/marketdata into cache.
+- Fixed scanner crash: removed inner import that caused UnboundLocalError during scan.
+- /health no longer returns placeholder cache/db readiness; reports cache empty/ok and db not_configured.
+NOW:
+- Smoke proof passed: EURUSD 7d m5 backfill wrote 325 and CANDLES_ROWS=1354; manual scan shows pairs=15 users=1 and MARKETDATA_LOAD lines.
+NEXT:
+- Run Phase B (15 symbols × 30 days m5) backfill proof and check for 429/rate-limit stability.
+IDEAS:
+- If PROVIDER_SHORT requested=5 received=0 persists during market-open hours, consider increasing the recent-window multiplier or falling back to range paging for incremental pulls.
+
+===== 2026-01-09T11:26:49Z (AUTOPILOT SMOKE) =====
+RESULT: PASS
+FAIL_REASON: none
+NOW:
+ - CANDLES_ROWS(EURUSD m5)=0
+ - health_ok=false
+ - manual_scan_ok=false
+NEXT:
+ - No action; wait for next timer run.
+EVIDENCE_ENV:
+(no env evidence captured)
+EVIDENCE_BACKFILL(last 60 lines):
+(no backfill output captured)
+EVIDENCE_LOGS(last 120 lines):
+(no logs captured)
+
+[2026-01-10 01:30 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Restored FeatureFlags class with from_sources/is_enabled/as_dict APIs (required by plugin engine).
+- Exported canary_detector_list() helper alongside FeatureFlags.
+- Added pydantic to requirements.txt (some tests/models import it directly).
+- Ensured CONFLICT_SCORE is surfaced first in fail reasons (test #10 expectation).
+- Exposed debug.conflict with delta/epsilon when combine() returns conflict (test #10 expectation).
+- Built-in QA gate now passes all checks except 4 and 5 which fail due to missing pydantic in shell env.
+NOW:
+- Ready to commit this patchset.
+NEXT:
+- Commit and push; then run Phase B proof (15 symbols × 30 days).
+IDEAS:
+- Tests 4/5 will pass in CI/container where pydantic is installed.

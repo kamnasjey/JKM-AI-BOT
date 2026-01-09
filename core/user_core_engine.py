@@ -983,6 +983,17 @@ def scan_pair_cached_indicator_free(
         debug_s["min_score"] = float(spec.min_score)
         debug_s["detectors_hit"] = list(comb.evidence.get("detectors_hit") or [])
 
+        # Attach conflict evidence for QA and ops visibility
+        try:
+            conflict_delta = comb.evidence.get("conflict_delta")
+            if conflict_delta is not None:
+                debug_s["conflict"] = {
+                    "delta": float(conflict_delta),
+                    "epsilon": float(spec.conflict_epsilon),
+                }
+        except Exception:
+            pass
+
         if not comb.ok:
             fr = str(comb.fail_reason or "SCORE_FAILED")
             if fr == "SCORE_BELOW_MIN":
@@ -1213,7 +1224,14 @@ def scan_pair_cached_indicator_free(
         if strategy_skips:
             best_fail_debug["strategy_skips"] = list(strategy_skips)
     else:
-        fail_reasons.append(str(best_fail_reason or "NO_HITS"))
+        main_fail = str(best_fail_reason or "NO_HITS")
+        # Some failure reasons are expected to be surfaced first.
+        # Keep existing regime/context reasons first for most cases.
+        if main_fail in ("CONFLICT_SCORE",):
+            if main_fail not in fail_reasons:
+                fail_reasons = [main_fail] + fail_reasons
+        else:
+            fail_reasons.append(main_fail)
     return ScanResult(
         pair,
         False,
