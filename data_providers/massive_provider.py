@@ -340,7 +340,8 @@ class MassiveDataProvider(DataProvider):
             url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_ms}/{end_ms}"
             params = {
                 "adjusted": "true",
-                "sort": "asc",
+                # Use newest-first so incremental/backfill runs can append beyond meta.last_ts.
+                "sort": "desc",
                 "limit": int(eff_limit),
             }
 

@@ -64,3 +64,26 @@ NEXT:
 - Create git commit and push to remote.
 IDEAS:
 - Backfill script writes 0 rows if the requested window is already covered; admin backfill can still append newest candles for proof.
+
+[2026-01-09 17:06 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Created git commit and pushed to remote branch (no secrets).
+NOW:
+- Starting end-to-end v0.1 Massive-only proof pass (sanity checks → backfills → engine endpoints).
+NEXT:
+- Step A sanity checks: docker running, /health, env presence (PRESENT/MISSING), provider=massive, 15-symbol config.
+IDEAS:
+- If EURUSD 7-day chunk backfill writes 0 due to overlap, adjust Massive fetch to include latest candles (still no format change).
+
+[2026-01-09 17:16 Asia/Ulaanbaatar] (checkpoint)
+DONE:
+- Sanity: docker compose backend running; /health OK.
+- Fixed /health to treat MASSIVE_BASE_URL as optional default (provider_configured now true when MASSIVE_API_KEY is present).
+- Fixed Massive aggregates fetch to use newest-first (sort=desc) so incremental backfills append rows.
+- Phase A proof (EURUSD 7d, m5, chunk=7): backfill_chunk wrote 240 candles; state/marketdata/EURUSD/m5.csv.gz grew 4.2K → 6.2K; meta.rows_count 372 → 612; meta.last_ts advanced.
+NOW:
+- Ready to proceed Phase A log collection and Phase B (15 symbols × 30d) backfill.
+NEXT:
+- Commit and push the latest fixes to GitHub.
+IDEAS:
+- Keep using INGEST_DEBUG evidence lines; still no secrets.

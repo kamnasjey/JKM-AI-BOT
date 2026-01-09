@@ -132,7 +132,8 @@ def _read_last_json_objects(file_path: Path, limit: int) -> list[dict[str, Any]]
 @app.get("/health")
 def health():
     massive_key = (os.getenv("MASSIVE_API_KEY") or "").strip()
-    massive_base_url = (os.getenv("MASSIVE_BASE_URL") or "").strip()
+    # MASSIVE_BASE_URL is optional; provider defaults to https://api.massive.com.
+    massive_base_url = (os.getenv("MASSIVE_BASE_URL") or "").strip() or "https://api.massive.com"
     data_provider = (os.getenv("DATA_PROVIDER") or os.getenv("MARKET_DATA_PROVIDER") or "").strip().lower()
     state_dir = Path(os.getenv("STATE_DIR") or "/app/state")
     writable = _ensure_writable_dir(state_dir)
