@@ -40,6 +40,8 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+# Suppress httpx INFO logs (they leak bot token in URL)
+logging.getLogger('httpx').setLevel(logging.WARNING)
 # ... imports remain ...
 import threading
 
@@ -452,7 +454,7 @@ class ScannerService:
                 syms = get_union_watchlist(max_per_user=5)
                 loaded = 0
                 for sym in syms:
-                    items = load_tail(sym, "m5", limit=5000)
+                    items = load_tail(sym, "m5", limit=int(getattr(config, "MARKETDATA_PRELOAD_M5_LIMIT", 5000) or 5000))
                     if items:
                         market_cache.upsert_candles(sym, items)
                         loaded += 1
@@ -1525,7 +1527,8 @@ class ScannerService:
                 else:
                     # Default MA-based detector pipeline
                     result = scan_pair_cached(symbol, active_strategy, t_objs, e_objs)
-            except Exception:
+            except Exception as _eng_exc:
+                import traceback
                 log_kv_error(
                     logger,
                     "scan_engine_error",
@@ -1535,6 +1538,8 @@ class ScannerService:
                     trend_tf=trend_tf,
                     entry_tf=entry_tf,
                     engine_version=engine_version,
+                    exc=str(_eng_exc)[:200],
+                    tb=traceback.format_exc()[-500:],
                 )
                 continue
             engine_ms = (time.perf_counter() - t_engine) * 1000.0
@@ -1672,6 +1677,10 @@ class ScannerService:
                     continue
 
                 reason = normalize_pair_none_reason(result.reasons)
+
+                # DEBUG: track raw reasons when normalized to UNKNOWN_ERROR
+                if reason == "UNKNOWN_ERROR":
+                    logger.info(f"DEBUG_RAW_REASONS symbol={symbol} raw={result.reasons}")
 
                 extra: Dict[str, Any] = {}
                 try:

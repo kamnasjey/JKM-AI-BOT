@@ -415,10 +415,12 @@ def scan_pair_cached_indicator_free(
         pass
     
     # Validate data
-    if len(trend_candles) < 55:
+    import config as _config
+    _min_trend = int(getattr(_config, 'MIN_TREND_BARS', 45) or 45)
+    if len(trend_candles) < _min_trend:
         return ScanResult(
             pair, False, None,
-            [f"Trend data insufficient: {len(trend_candles)} < 55"],
+            [f"Trend data insufficient: {len(trend_candles)} < {_min_trend}"],
             trend_tf=trend_tf,
             entry_tf=entry_tf,
         )

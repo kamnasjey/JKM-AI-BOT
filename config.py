@@ -181,7 +181,7 @@ PERF_SUMMARY_EVERY_CYCLES: int = _get_int_env("PERF_SUMMARY_EVERY_CYCLES", 20)
 # --- Data readiness gate (cache coverage) ---
 
 # Minimum trend timeframe bars required before the engine is likely to work.
-MIN_TREND_BARS: int = _get_int_env("MIN_TREND_BARS", 55)
+MIN_TREND_BARS: int = _get_int_env("MIN_TREND_BARS", 45)
 
 # Minimum entry timeframe bars required before running entry detectors.
 MIN_ENTRY_BARS: int = _get_int_env("MIN_ENTRY_BARS", 200)
@@ -191,6 +191,14 @@ DATA_GAP_NOTIFY_COOLDOWN_MIN: int = _get_int_env("DATA_GAP_NOTIFY_COOLDOWN_MIN",
 
 # Rate-limit DATA_GAP logs per (symbol,tf) to once per N seconds.
 DATA_GAP_LOG_INTERVAL_SEC: int = _get_int_env("DATA_GAP_LOG_INTERVAL_SEC", 3600)
+
+
+# --- Startup preload (disk -> cache) ---
+
+# When DATA_PROVIDER=massive, ScannerService preloads last N M5 candles per symbol from
+# state/marketdata/<SYMBOL>/m5.csv.gz into MarketDataCache.
+# Higher values reduce data_gap risk when resampling drops incomplete windows.
+MARKETDATA_PRELOAD_M5_LIMIT: int = _get_int_env("MARKETDATA_PRELOAD_M5_LIMIT", 5000)
 
 
 # --- Trend / regime handling ---

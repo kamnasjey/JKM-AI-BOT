@@ -11,8 +11,6 @@ from notify.formatters import format_signal_message
 
 logger = logging.getLogger("notifier.telegram")
 
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
-
 # Deduplication Config
 DEDUP_WINDOW_MINUTES = 30
 PRICE_TOLERANCE_PERCENT = 0.001  # 0.1% difference considered "same setup"
@@ -135,6 +133,10 @@ class TelegramNotifier:
         """
         Send a text message to Telegram.
         """
+        if not self.token:
+            # Avoid noisy 404s against https://api.telegram.org/bot/sendMessage
+            return False
+
         target_chat_id = chat_id or self.default_chat_id
         if not target_chat_id:
             logger.warning("No chat_id provided for Telegram message.")
@@ -153,8 +155,19 @@ class TelegramNotifier:
                 resp = client.post(f"{self.api_url}/sendMessage", data=payload)
                 resp.raise_for_status()
             return True
+        except httpx.HTTPStatusError as e:
+            # Do not log the exception string (it contains full URL incl. bot token).
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            body = ""
+            try:
+                body = (e.response.text or "")[:200] if e.response is not None else ""
+            except Exception:
+                body = ""
+            logger.error("Failed to send Telegram message: status=%s body=%s", status, body)
+            return False
         except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
+            # Avoid leaking bot token via exception message.
+            logger.error("Failed to send Telegram message: %s", type(e).__name__)
             return False
 
     def send_photo(
@@ -168,6 +181,10 @@ class TelegramNotifier:
         """
         Send a photo (chart) to Telegram.
         """
+        if not self.token:
+            # Avoid noisy 404s against https://api.telegram.org/bot/sendPhoto
+            return False
+
         target_chat_id = chat_id or self.default_chat_id
         if not target_chat_id:
             logger.warning("No chat_id provided for Telegram photo.")
@@ -193,8 +210,17 @@ class TelegramNotifier:
                 resp = client.post(f"{self.api_url}/sendPhoto", data=data, files=files)
                 resp.raise_for_status()
             return True
+        except httpx.HTTPStatusError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            body = ""
+            try:
+                body = (e.response.text or "")[:200] if e.response is not None else ""
+            except Exception:
+                body = ""
+            logger.error("Failed to send Telegram photo: status=%s body=%s", status, body)
+            return False
         except Exception as e:
-            logger.error(f"Failed to send Telegram photo: {e}")
+            logger.error("Failed to send Telegram photo: %s", type(e).__name__)
             return False
 
 # Global instance for easy import

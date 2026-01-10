@@ -469,3 +469,49 @@ EVIDENCE_LOGS (last 30 lines):
 2026-01-10 15:52:03,932 [INFO] ScannerService: PAIR_NONE | ms_total=39.84 | reason=UNKNOWN_ERROR | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=AUDUSD
 2026-01-10 15:52:03,989 [INFO] ScannerService: PAIR_NONE | ms_total=47.51 | reason=NO_HITS | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=BTCUSD
 2026-01-10 15:52:04,046 [INFO] ScannerService: PAIR_NONE | ms_total=45.88 | reason=NO_HITS | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=EURAUD
+
+===== 2026-01-10T08:21:52Z (AUTOPILOT SMOKE) =====
+RESULT: PASS
+FAIL_REASON: none
+NOW:
+  - health_ok=true
+  - engine_running=true
+  - scan_ok=true
+  - rowcounts: EURUSD=70681 XAUUSD=69100 BTCUSD=89965 
+NEXT:
+  - Monitor next cycle; Phase C if not done.
+EVIDENCE_ENV:
+DATA_PROVIDER=massive
+MASSIVE_API_KEY=PRESENT
+INTERNAL_API_KEY=PRESENT
+EVIDENCE_LOGS (last 30 lines):
+2026-01-10 16:21:57,376 [INFO] ScannerService: PAIR_NONE | ms_total=44.50 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=BTCUSD
+2026-01-10 16:21:57,428 [INFO] ScannerService: PAIR_NONE | ms_total=40.96 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=EURAUD
+2026-01-10 16:21:57,482 [INFO] ScannerService: PAIR_NONE | ms_total=45.73 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=EURCHF
+2026-01-10 16:21:57,536 [INFO] ScannerService: PAIR_NONE | ms_total=44.43 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=EURGBP
+2026-01-10 16:21:57,587 [INFO] ScannerService: PAIR_NONE | ms_total=37.95 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=EURJPY
+2026-01-10 16:21:57,643 [INFO] ScannerService: PAIR_NONE | ms_total=44.31 | reason=UNKNOWN_ERROR | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=EURUSD
+2026-01-10 16:21:57,689 [INFO] ScannerService: PAIR_NONE | ms_total=37.32 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=GBPJPY
+2026-01-10 16:21:57,735 [INFO] ScannerService: PAIR_NONE | ms_total=35.62 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=GBPUSD
+2026-01-10 16:21:57,781 [INFO] ScannerService: PAIR_NONE | ms_total=36.02 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=NZDUSD
+2026-01-10 16:21:57,829 [INFO] ScannerService: PAIR_NONE | ms_total=35.82 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=USDCAD
+2026-01-10 16:21:57,889 [INFO] ScannerService: PAIR_NONE | ms_total=42.74 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=USDCHF
+2026-01-10 16:21:57,932 [INFO] ScannerService: PAIR_NONE | ms_total=32.39 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=USDJPY
+2026-01-10 16:21:57,985 [INFO] ScannerService: PAIR_NONE | ms_total=42.25 | reason=NO_HITS | scan_id=1768033317186-bdc5 | strategy_id=default_f9198d | symbol=XAUUSD
+2026-01-10 16:21:58,055 [INFO] ScannerService: METRICS_DAILY_SUMMARY | avg_rr=NA | avg_score=NA | cooldown_blocks=0 | daily_limit_blocks=0 | date=2026-01-10 | ok=79 | ok_rate=0.020 | top_reason=NO_HITS | top_strategy=default_f9198d | total=3977 | window_h=24
+2026-01-10 16:21:58,055 [INFO] ScannerService: METRICS_DETECTOR_COVERAGE | date=2026-01-10 | dead_detectors=["doji","engulfing","fakeout_trap","fibo_extension","fibo_retrace","fibo_retrace_confluence","pinbar","pinbar_at_level","range_box_edge","sr_bounce","sr_breakout","sr_role_reversal","structure_trend","swing_failure"] | dead_detectors_count=14 | dead_diagnosis={"doji":["NOT_IN_ANY_STRATEGY"],"engulfing":["NOT_IN_ANY_STRATEGY"],"fakeout_trap":[],"fibo_extension":["NOT_IN_ANY_STRATEGY"],"fibo_retrace":["NOT_IN_ANY_STRATEGY"]} | loaded_detectors=14 | ok=79 | per_strategy_top_detectors={} | seen_detectors=0 | shadow_dead_detectors=["doji","engulfing","fakeout_trap","fibo_extension","fibo_retrace","fibo_retrace_confluence","pinbar","pinbar_at_level","range_box_edge","sr_bounce","sr_breakout","sr_role_reversal","structure_trend","swing_failure"] | shadow_dead_detectors_count=14 | shadow_seen_detectors=0 | shadow_top_detectors=[] | top_detectors=[] | total=3977 | total_strategies_covered=0 | window_h=24
+2026-01-10 16:21:58,076 [INFO] ScannerService: METRICS_TUNING_REPORT | actions_count=0 | date=2026-01-10 | recos=🛠 Tuning Suggestions (2026-01-10): 1) OK rate is low and most NONE decisions are NO_HITS: broaden opportunity or improve hit coverage.
+2026-01-10 16:21:58,804 [INFO] ScannerService: SCAN_END | scan_id=1768033317186-bdc5 | signals=0 | total_ms=799
+2026-01-10 16:21:58,809 [INFO] ScannerService: SCAN_START | pairs=15 | scan_id=1768033318805-d063 | strategies_count=1 | ts=2026-01-10T16:21:58.805933 | users=1
+2026-01-10 16:21:58,826 [INFO] ScannerService: PAIR_NONE | ms_total=3.72 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=AUDJPY
+2026-01-10 16:21:58,838 [INFO] ScannerService: PAIR_NONE | ms_total=2.29 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=AUDUSD
+2026-01-10 16:21:58,857 [INFO] ScannerService: PAIR_NONE | ms_total=6.64 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=BTCUSD
+2026-01-10 16:21:58,872 [INFO] ScannerService: PAIR_NONE | ms_total=5.28 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=EURAUD
+2026-01-10 16:21:58,890 [INFO] ScannerService: PAIR_NONE | ms_total=6.40 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=EURCHF
+2026-01-10 16:21:58,905 [INFO] ScannerService: PAIR_NONE | ms_total=5.52 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=EURGBP
+2026-01-10 16:21:58,919 [INFO] ScannerService: PAIR_NONE | ms_total=2.32 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=EURJPY
+2026-01-10 16:21:58,931 [INFO] ScannerService: PAIR_NONE | ms_total=2.46 | reason=UNKNOWN_ERROR | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=EURUSD
+2026-01-10 16:21:58,948 [INFO] ScannerService: PAIR_NONE | ms_total=4.33 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=GBPJPY
+2026-01-10 16:21:58,963 [INFO] ScannerService: PAIR_NONE | ms_total=5.19 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=GBPUSD
+2026-01-10 16:21:58,977 [INFO] ScannerService: PAIR_NONE | ms_total=4.99 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=NZDUSD
+2026-01-10 16:21:58,992 [INFO] ScannerService: PAIR_NONE | ms_total=5.70 | reason=NO_HITS | scan_id=1768033318805-d063 | strategy_id=default_f9198d | symbol=USDCAD

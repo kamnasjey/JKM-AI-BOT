@@ -30,6 +30,8 @@ _ALIAS_TO_STABLE = {
     "NO_SIGNALS_FROM_DETECTORS": "NO_HITS",
     "NO_HITS": "NO_HITS",
     "NO_DETECTORS_FOR_REGIME": "NO_DETECTORS_FOR_REGIME",
+    "TREND_FLAT": "NO_HITS",
+    "TREND_UNCLEAR": "NO_HITS",
 
     # Score/quality gates
     "low_score": "SCORE_BELOW_MIN",
@@ -80,6 +82,10 @@ def normalize_pair_none_reason(reasons: Optional[List[str]]) -> str:
         # Normalize SCORE_BELOW_MIN|x<y => SCORE_BELOW_MIN
         if s.startswith("SCORE_BELOW_MIN"):
             s = "SCORE_BELOW_MIN"
+        
+        # Normalize "Trend data insufficient: X < Y" => NO_HITS
+        if s.startswith("Trend data insufficient"):
+            s = "NO_HITS"
 
         mapped.append(_ALIAS_TO_STABLE.get(s, s))
 

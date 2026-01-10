@@ -6,6 +6,7 @@
       "strategy_id": "range_reversal_v1",
       "enabled": true,
       "priority": 50,
+      "engine_version": "indicator_free_v1",
       "min_score": 1.0,
       "min_rr": 2.0,
       "allowed_regimes": ["RANGE", "CHOP"],

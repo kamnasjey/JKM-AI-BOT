@@ -41,6 +41,19 @@ else:
         allow_headers=["*"]
     )
 
+# ---- STARTUP: launch background scanner scheduler ----
+@app.on_event("startup")
+def _startup_scanner():
+    """Launch the APScheduler-based 5-minute scan cycle on server start."""
+    import logging
+    _log = logging.getLogger("api_server.startup")
+    try:
+        import scanner_service
+        result = scanner_service.start()
+        _log.info("Scanner scheduler started: %s", result)
+    except Exception as e:
+        _log.error("Failed to start scanner scheduler: %s", e, exc_info=True)
+
 def _ensure_writable_dir(p: Path) -> bool:
     try:
         p.mkdir(parents=True, exist_ok=True)
