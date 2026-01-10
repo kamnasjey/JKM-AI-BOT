@@ -469,6 +469,41 @@ class ScannerService:
                                     path=str(_md_path(sym, "m5")),
                                     last_ts=(last_ts.isoformat() if hasattr(last_ts, "isoformat") else None),
                                 )
+
+                                # Prove higher-TF readiness (MarketDataCache derives H1/H4 from M5).
+                                try:
+                                    h1 = market_cache.get_resampled(str(sym).upper(), "H1")
+                                    if h1:
+                                        h1_last = h1[-1].get("time")
+                                        log_kv(
+                                            logger,
+                                            "MARKETDATA_LOAD",
+                                            source="disk_resample",
+                                            symbol=str(sym).upper(),
+                                            tf="h1",
+                                            rows=int(len(h1)),
+                                            path=str(_md_path(sym, "m5")),
+                                            last_ts=(h1_last.isoformat() if hasattr(h1_last, "isoformat") else None),
+                                        )
+                                except Exception:
+                                    pass
+
+                                try:
+                                    h4 = market_cache.get_resampled(str(sym).upper(), "H4")
+                                    if h4:
+                                        h4_last = h4[-1].get("time")
+                                        log_kv(
+                                            logger,
+                                            "MARKETDATA_LOAD",
+                                            source="disk_resample",
+                                            symbol=str(sym).upper(),
+                                            tf="h4",
+                                            rows=int(len(h4)),
+                                            path=str(_md_path(sym, "m5")),
+                                            last_ts=(h4_last.isoformat() if hasattr(h4_last, "isoformat") else None),
+                                        )
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                 if loaded:

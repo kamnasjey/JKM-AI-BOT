@@ -216,3 +216,22 @@ jkm_bot_backend  | 2026-01-09 19:46:50,472 [INFO] ScannerService: PAIR_NONE | ha
 jkm_bot_backend  | 2026-01-09 19:46:50,482 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=141 | internal_reason=data_gap | ms_total=9.23 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURCHF
 jkm_bot_backend  | 2026-01-09 19:46:50,493 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=138 | internal_reason=data_gap | ms_total=10.48 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURGBP
 jkm_bot_backend  | 2026-01-09 19:46:50,506 [INFO] ScannerService: PAIR_NONE | have_h4=11 | have_m15=142 | internal_reason=data_gap | ms_total=12.74 | need_h4=55 | need_m15=200 | reason=UNKNOWN_ERROR | scan_id=1767959210378-8dd3 | strategy_id=default_f9198d | symbol=EURJPY
+
+===== 2026-01-09T12:05:25Z (H4 DATA_GAP FIX) =====
+RESULT: PASS
+DONE:
+  - Backfilled Massive watchlist (15 symbols) M5 history for 30 days (chunk_days=7), resumable via upsert.
+  - Updated backend preload to emit MARKETDATA_LOAD for derived H1/H4 (source=disk_resample) after loading M5 from disk.
+  - Restarted backend and confirmed scanner no longer emits PAIR_NONE internal_reason=data_gap.
+NOW:
+  - Manual scan ok=true; data_gap=NONE.
+NEXT:
+  - If we still see UNKNOWN_ERROR for specific pairs, isolate stack traces for only those symbols.
+  - Proceed to Phase C (longer-range) backfill proof if needed.
+EVIDENCE_BACKFILL:
+  - Backfill complete total_written=27187
+EVIDENCE_LOGS:
+  - MARKETDATA_LOAD source=disk_resample symbol=AUDJPY tf=h4 rows=61
+  - SCAN_START pairs=15 scan_id=1767960324845-8a50
+  - SCAN_END scan_id=1767960324845-8a50 signals=0
+  - data_gap=NONE
