@@ -458,3 +458,117 @@ def admin_backfill(payload: dict):
     t = threading.Thread(target=_job, name=f"admin-backfill-{symbol}", daemon=True)
     t.start()
     return {"ok": True, "started": True, "symbol": symbol, "timeframe": timeframe, "days": days, "chunk_days": chunk_days}
+
+
+# ============================================================================
+# USER STRATEGY & DETECTOR API ENDPOINTS
+# ============================================================================
+
+@app.get("/api/detectors")
+async def list_detectors():
+    """List all available detectors with metadata."""
+    from detectors.registry import DETECTOR_REGISTRY, get_detector
+    
+    result = []
+    for name in sorted(DETECTOR_REGISTRY.keys()):
+        try:
+            det = get_detector(name)
+            if det:
+                result.append({
+                    "name": name,
+                    "doc": det.get_doc() if hasattr(det, "get_doc") else "",
+                    "params_schema": det.get_params_schema() if hasattr(det, "get_params_schema") else {},
+                    "examples": det.get_examples() if hasattr(det, "get_examples") else [],
+                })
+        except Exception:
+            result.append({"name": name, "doc": "", "params_schema": {}, "examples": []})
+    
+    return {"ok": True, "detectors": result, "count": len(result)}
+
+
+@app.get("/api/presets")
+async def list_presets():
+    """List available strategy presets."""
+    import glob
+    presets = []
+    for f in glob.glob("config/presets/*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as fp:
+                data = json.loads(fp.read())
+                presets.append({
+                    "preset_id": data.get("preset_id", Path(f).stem),
+                    "strategies": data.get("strategies", []),
+                })
+        except Exception:
+            pass
+    return {"ok": True, "presets": presets, "count": len(presets)}
+
+
+@app.get("/api/user/{user_id}/strategies")
+async def get_user_strategies(user_id: str, api_key: str = Depends(require_internal_key)):
+    """Get user's saved strategies."""
+    from core.user_strategies_store import load_user_strategies
+    
+    strategies = load_user_strategies(user_id)
+    return {"ok": True, "user_id": user_id, "strategies": strategies, "count": len(strategies)}
+
+
+@app.post("/api/user/{user_id}/strategies")
+async def save_user_strategies_endpoint(
+    user_id: str,
+    payload: dict = Body(...),
+    api_key: str = Depends(require_internal_key)
+):
+    """Save user's strategies.
+    
+    Body: {"strategies": [...]}
+    Each strategy should have:
+      - strategy_id: unique name
+      - enabled: true/false
+      - detectors: ["detector1", "detector2", ...]
+      - min_score: float (default 1.0)
+      - min_rr: float (default 2.0)
+      - allowed_regimes: ["RANGE", "TREND_BULL", "TREND_BEAR", "CHOP"]
+    """
+    from core.user_strategies_store import save_user_strategies
+    
+    strategies = payload.get("strategies", [])
+    result = save_user_strategies(user_id, strategies)
+    return result
+
+
+@app.delete("/api/user/{user_id}/strategies")
+async def delete_user_strategies(user_id: str, api_key: str = Depends(require_internal_key)):
+    """Delete all user strategies."""
+    from core.user_strategies_store import user_strategies_path
+    
+    path = user_strategies_path(user_id)
+    try:
+        path.unlink(missing_ok=True)
+        return {"ok": True, "user_id": user_id, "deleted": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/user/{user_id}/strategies/from-preset/{preset_id}")
+async def copy_preset_to_user(
+    user_id: str,
+    preset_id: str,
+    api_key: str = Depends(require_internal_key)
+):
+    """Copy a preset to user's strategies."""
+    from core.user_strategies_store import save_user_strategies
+    
+    preset_path = Path(f"config/presets/{preset_id}.json")
+    if not preset_path.exists():
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    
+    try:
+        with open(preset_path, "r", encoding="utf-8") as fp:
+            data = json.loads(fp.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load preset: {e}")
+    
+    strategies = data.get("strategies", [])
+    result = save_user_strategies(user_id, strategies)
+    return result
