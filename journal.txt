@@ -316,6 +316,36 @@ EVIDENCE_LOGS (last 30 lines):
 2026-01-10 15:12:05,680 [INFO] ScannerService: PAIR_NONE | ms_total=3.77 | reason=UNKNOWN_ERROR | scan_id=1768029125428-38cc | strategy_id=default_f9198d | symbol=XAUUSD
 2026-01-10 15:12:05,681 [INFO] ScannerService: SCAN_END | scan_id=1768029125428-38cc | signals=0 | total_ms=253
 
+===== 2026-01-10T15:20:00Z (PHASE C PROOF: 15 symbols × ~2y M5 backfill + resume safety + restart/scan) =====
+RESULT: PASS (with note on resume semantics)
+DONE:
+  - Massive watchlist (15 symbols) backfilled on M5 for ~2 years using chunked ingestion; data persisted under state/marketdata/<SYMBOL>/m5.csv.gz + m5.meta.json.
+  - Re-ran the same command to test resume/idempotency; store remained consistent (no duplicate timestamps; meta rows_count matches gzip rows).
+  - Restarted backend and confirmed scanner loads from disk + derived H1/H4 from disk_resample; manual scan endpoint works headlessly.
+NOW:
+  - Disk persistence verified; scanner/engine endpoints stable.
+NOTE (RESUME):
+  - scripts/backfill_massive.py backfill window is relative to “now” (end=now, start=now-years).
+  - A later rerun will naturally target a shifted window and can add new unique rows near the window edges.
+  - Therefore rerun is not expected to be a strict no-op, but it MUST remain duplicate-safe (confirmed below).
+EVIDENCE_BACKFILL:
+  - container:/tmp/phase_c_backfill.log -> Backfill complete total_written=503830
+  - container:/tmp/phase_c_backfill_rerun.log -> Backfill complete total_written=502593
+EVIDENCE_PERSISTENCE:
+  - du -sh state/marketdata -> 11M
+  - largest m5.csv.gz (bytes): BTCUSD=1372326, XAUUSD=804523, GBPJPY=792191, EURJPY=743181, AUDJPY=733261
+  - meta vs gzip + uniqueness (spot-check):
+    - EURUSD meta_rows=70680 == data_rows=70680; duplicate_ts_rows=0; first_ts=2024-01-12T13:42:00+00:00 last_ts=2026-01-09T21:59:00+00:00
+    - XAUUSD meta_rows=69099 == data_rows=69099; duplicate_ts_rows=0; first_ts=2024-01-12T13:42:00+00:00 last_ts=2026-01-09T21:59:00+00:00
+    - BTCUSD meta_rows=89964 == data_rows=89964; duplicate_ts_rows=0; first_ts=2024-01-12T14:37:00+00:00 last_ts=2026-01-10T06:04:00+00:00
+EVIDENCE_LOGS (after restart + scans):
+  - MARKETDATA_LOAD source=disk symbol=BTCUSD tf=m5 rows=5000 last_ts=2026-01-10T06:04:00+00:00 (note: scanner preload cap)
+  - MARKETDATA_LOAD source=disk_resample symbol=BTCUSD tf=h1 rows=247 last_ts=2026-01-10T06:00:00+00:00
+  - MARKETDATA_LOAD source=disk_resample symbol=BTCUSD tf=h4 rows=67 last_ts=2026-01-10T04:00:00+00:00
+  - SCAN_START pairs=15 scan_id=1768029532028-4c4f
+  - "POST /api/engine/manual-scan HTTP/1.1" 200 OK
+  - SCAN_END scan_id=1768029532028-4c4f signals=0
+
 ===== 2026-01-10T07:15:00Z (PHASE C PROOF: 15 symbols × 2 years m5) =====
 RESULT: PASS
 DONE:
