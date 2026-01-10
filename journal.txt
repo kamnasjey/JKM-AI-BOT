@@ -423,3 +423,49 @@ EVIDENCE_LOGS (last 30 lines):
 2026-01-10 15:21:30,834 [INFO] ScannerService: PAIR_NONE | ms_total=4.33 | reason=NO_HITS | scan_id=1768029690502-7fcc | strategy_id=default_f9198d | symbol=USDJPY
 2026-01-10 15:21:30,847 [INFO] ScannerService: PAIR_NONE | ms_total=3.04 | reason=UNKNOWN_ERROR | scan_id=1768029690502-7fcc | strategy_id=default_f9198d | symbol=XAUUSD
 2026-01-10 15:21:30,848 [INFO] ScannerService: SCAN_END | scan_id=1768029690502-7fcc | signals=0 | total_ms=345
+
+===== 2026-01-10T07:51:46Z (AUTOPILOT SMOKE) =====
+RESULT: PASS
+FAIL_REASON: none
+NOW:
+  - health_ok=true
+  - engine_running=true
+  - scan_ok=true
+  - rowcounts: EURUSD=70681 XAUUSD=69100 BTCUSD=89965 
+NEXT:
+  - Monitor next cycle; Phase C if not done.
+EVIDENCE_ENV:
+DATA_PROVIDER=massive
+MASSIVE_API_KEY=PRESENT
+INTERNAL_API_KEY=PRESENT
+EVIDENCE_LOGS (last 30 lines):
+2026-01-10 15:51:57,489 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/EURJPY/m5.csv.gz | rows=69 | source=disk_resample | symbol=EURJPY | tf=h4
+2026-01-10 15:51:58,154 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/EURUSD/m5.csv.gz | rows=5000 | source=disk | symbol=EURUSD | tf=m5
+2026-01-10 15:51:58,172 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/EURUSD/m5.csv.gz | rows=181 | source=disk_resample | symbol=EURUSD | tf=h1
+2026-01-10 15:51:58,193 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/EURUSD/m5.csv.gz | rows=46 | source=disk_resample | symbol=EURUSD | tf=h4
+2026-01-10 15:51:58,855 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/GBPJPY/m5.csv.gz | rows=5000 | source=disk | symbol=GBPJPY | tf=m5
+2026-01-10 15:51:58,864 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/GBPJPY/m5.csv.gz | rows=224 | source=disk_resample | symbol=GBPJPY | tf=h1
+2026-01-10 15:51:58,873 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/GBPJPY/m5.csv.gz | rows=69 | source=disk_resample | symbol=GBPJPY | tf=h4
+2026-01-10 15:51:59,420 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/GBPUSD/m5.csv.gz | rows=5000 | source=disk | symbol=GBPUSD | tf=m5
+2026-01-10 15:51:59,438 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/GBPUSD/m5.csv.gz | rows=223 | source=disk_resample | symbol=GBPUSD | tf=h1
+2026-01-10 15:51:59,456 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/GBPUSD/m5.csv.gz | rows=69 | source=disk_resample | symbol=GBPUSD | tf=h4
+2026-01-10 15:52:00,149 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=5000 | source=disk | symbol=NZDUSD | tf=m5
+2026-01-10 15:52:00,167 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=223 | source=disk_resample | symbol=NZDUSD | tf=h1
+2026-01-10 15:52:00,188 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=69 | source=disk_resample | symbol=NZDUSD | tf=h4
+2026-01-10 15:52:00,816 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=5000 | source=disk | symbol=USDCAD | tf=m5
+2026-01-10 15:52:00,833 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=222 | source=disk_resample | symbol=USDCAD | tf=h1
+2026-01-10 15:52:00,853 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=69 | source=disk_resample | symbol=USDCAD | tf=h4
+2026-01-10 15:52:01,544 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=5000 | source=disk | symbol=USDCHF | tf=m5
+2026-01-10 15:52:01,561 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=223 | source=disk_resample | symbol=USDCHF | tf=h1
+2026-01-10 15:52:01,578 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=69 | source=disk_resample | symbol=USDCHF | tf=h4
+2026-01-10 15:52:02,312 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=5000 | source=disk | symbol=USDJPY | tf=m5
+2026-01-10 15:52:02,330 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=223 | source=disk_resample | symbol=USDJPY | tf=h1
+2026-01-10 15:52:02,348 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=69 | source=disk_resample | symbol=USDJPY | tf=h4
+2026-01-10 15:52:03,028 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=5000 | source=disk | symbol=XAUUSD | tf=m5
+2026-01-10 15:52:03,040 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=252 | source=disk_resample | symbol=XAUUSD | tf=h1
+2026-01-10 15:52:03,058 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=69 | source=disk_resample | symbol=XAUUSD | tf=h4
+2026-01-10 15:52:03,796 [INFO] ScannerService: SCAN_START | pairs=15 | scan_id=1768031523795-0e17 | strategies_count=1 | ts=2026-01-10T15:52:03.795956 | users=1
+2026-01-10 15:52:03,880 [INFO] ScannerService: PAIR_NONE | ms_total=47.83 | reason=NO_HITS | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=AUDJPY
+2026-01-10 15:52:03,932 [INFO] ScannerService: PAIR_NONE | ms_total=39.84 | reason=UNKNOWN_ERROR | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=AUDUSD
+2026-01-10 15:52:03,989 [INFO] ScannerService: PAIR_NONE | ms_total=47.51 | reason=NO_HITS | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=BTCUSD
+2026-01-10 15:52:04,046 [INFO] ScannerService: PAIR_NONE | ms_total=45.88 | reason=NO_HITS | scan_id=1768031523795-0e17 | strategy_id=default_f9198d | symbol=EURAUD
