@@ -104,7 +104,9 @@ def log_startup_banner(
 
     schema = STRATEGY_SCHEMA_VERSION_SUPPORTED[0] if STRATEGY_SCHEMA_VERSION_SUPPORTED else 1
 
-    shadow_all = "1" if shadow_all == "1" else "0"
+    # Read SHADOW_ALL_DETECTORS from env safely
+    shadow_all_env = str(os.getenv("SHADOW_ALL_DETECTORS", "0") or "0").strip()
+    shadow_all = "1" if shadow_all_env == "1" else "0"
 
     # Feature Flags
     flags_str = "NA"

@@ -799,3 +799,49 @@ NEXT:
 - Billing integration: stub exists, connect to payment provider
 - Test with real setup signal to confirm end-to-end flow
 
+
+===== 2026-01-10T10:52:16Z (AUTOPILOT SMOKE) =====
+RESULT: PASS
+FAIL_REASON: none
+NOW:
+  - health_ok=true
+  - engine_running=true
+  - scan_ok=true
+  - rowcounts: EURUSD=70681 XAUUSD=69100 BTCUSD=89966 
+NEXT:
+  - Monitor next cycle; Phase C if not done.
+EVIDENCE_ENV:
+DATA_PROVIDER=massive
+MASSIVE_API_KEY=PRESENT
+INTERNAL_API_KEY=PRESENT
+EVIDENCE_LOGS (last 30 lines):
+2026-01-10 18:37:25,553 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/GBPUSD/m5.csv.gz | rows=223 | source=disk_resample | symbol=GBPUSD | tf=h1
+2026-01-10 18:37:25,569 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/GBPUSD/m5.csv.gz | rows=69 | source=disk_resample | symbol=GBPUSD | tf=h4
+2026-01-10 18:37:26,260 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=20000 | source=disk | symbol=NZDUSD | tf=m5
+2026-01-10 18:37:26,281 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=223 | source=disk_resample | symbol=NZDUSD | tf=h1
+2026-01-10 18:37:26,301 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/NZDUSD/m5.csv.gz | rows=69 | source=disk_resample | symbol=NZDUSD | tf=h4
+2026-01-10 18:37:27,032 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=20000 | source=disk | symbol=USDCAD | tf=m5
+2026-01-10 18:37:27,048 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=222 | source=disk_resample | symbol=USDCAD | tf=h1
+2026-01-10 18:37:27,066 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/USDCAD/m5.csv.gz | rows=69 | source=disk_resample | symbol=USDCAD | tf=h4
+2026-01-10 18:37:27,812 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=20000 | source=disk | symbol=USDCHF | tf=m5
+2026-01-10 18:37:27,829 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=223 | source=disk_resample | symbol=USDCHF | tf=h1
+2026-01-10 18:37:27,846 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/USDCHF/m5.csv.gz | rows=69 | source=disk_resample | symbol=USDCHF | tf=h4
+2026-01-10 18:37:28,560 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=20000 | source=disk | symbol=USDJPY | tf=m5
+2026-01-10 18:37:28,581 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=223 | source=disk_resample | symbol=USDJPY | tf=h1
+2026-01-10 18:37:28,600 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/USDJPY/m5.csv.gz | rows=69 | source=disk_resample | symbol=USDJPY | tf=h4
+2026-01-10 18:37:29,367 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:59:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=20000 | source=disk | symbol=XAUUSD | tf=m5
+2026-01-10 18:37:29,390 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T21:00:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=252 | source=disk_resample | symbol=XAUUSD | tf=h1
+2026-01-10 18:37:29,406 [INFO] ScannerService: MARKETDATA_LOAD | last_ts=2026-01-09T20:00:00+00:00 | path=state/marketdata/XAUUSD/m5.csv.gz | rows=69 | source=disk_resample | symbol=XAUUSD | tf=h4
+INFO:     172.18.0.1:47898 - "POST /api/user/test_quota_user/strategies HTTP/1.1" 400 Bad Request
+2026-01-10 18:42:29,487 [INFO] ScannerService: SCAN_START | pairs=0 | scan_id=1768041749486-c0f2 | strategies_count=1 | ts=2026-01-10T18:42:29.486428 | users=2
+2026-01-10 18:42:29,682 [INFO] ScannerService: METRICS_DAILY_SUMMARY | avg_rr=NA | avg_score=NA | cooldown_blocks=0 | daily_limit_blocks=0 | date=2026-01-10 | ok=79 | ok_rate=0.017 | top_reason=NO_HITS | top_strategy=default_f9198d | total=4622 | window_h=24
+2026-01-10 18:42:29,682 [INFO] ScannerService: METRICS_DETECTOR_COVERAGE | date=2026-01-10 | dead_detectors=["doji","engulfing","fakeout_trap","fibo_extension","fibo_retrace","fibo_retrace_confluence","pinbar","pinbar_at_level","range_box_edge","sr_bounce","sr_breakout","sr_role_reversal","structure_trend","swing_failure"] | dead_detectors_count=14 | dead_diagnosis={"doji":["NOT_IN_ANY_STRATEGY"],"engulfing":["NOT_IN_ANY_STRATEGY"],"fakeout_trap":[],"fibo_extension":["NOT_IN_ANY_STRATEGY"],"fibo_retrace":["NOT_IN_ANY_STRATEGY"]} | loaded_detectors=14 | ok=79 | per_strategy_top_detectors={} | seen_detectors=0 | shadow_dead_detectors=["doji","engulfing","fakeout_trap","fibo_extension","fibo_retrace","fibo_retrace_confluence","pinbar","pinbar_at_level","range_box_edge","sr_bounce","sr_breakout","sr_role_reversal","structure_trend","swing_failure"] | shadow_dead_detectors_count=14 | shadow_seen_detectors=0 | shadow_top_detectors=[] | top_detectors=[] | total=4622 | total_strategies_covered=0 | window_h=24
+2026-01-10 18:42:29,705 [INFO] ScannerService: METRICS_TUNING_REPORT | actions_count=0 | date=2026-01-10 | recos=🛠 Tuning Suggestions (2026-01-10): 1) OK rate is low and most NONE decisions are NO_HITS: broaden opportunity or improve hit coverage.
+2026-01-10 18:42:29,705 [INFO] ScannerService: SCAN_END | scan_id=1768041749486-c0f2 | signals=0 | total_ms=1
+2026-01-10 18:42:43,429 [INFO] data_ingestor_5m: Ingestor: Refreshing 15 symbols: ['AUDJPY', 'AUDUSD', 'BTCUSD', 'EURAUD', 'EURCHF', 'EURGBP', 'EURJPY', 'EURUSD', 'GBPJPY', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY', 'XAUUSD']
+2026-01-10 18:47:29,486 [INFO] ScannerService: SCAN_START | pairs=0 | scan_id=1768042049485-e086 | strategies_count=1 | ts=2026-01-10T18:47:29.485504 | users=2
+2026-01-10 18:47:29,486 [INFO] ScannerService: SCAN_END | scan_id=1768042049485-e086 | signals=0 | total_ms=1
+2026-01-10 18:52:20,105 [INFO] ScannerService: SCAN_START | pairs=0 | scan_id=1768042340104-4073 | strategies_count=1 | ts=2026-01-10T18:52:20.104396 | users=2
+2026-01-10 18:52:20,105 [INFO] ScannerService: SCAN_END | scan_id=1768042340104-4073 | signals=0 | total_ms=1
+2026-01-10 18:52:22,107 [INFO] ScannerService: SCAN_START | pairs=0 | scan_id=1768042342106-8e43 | strategies_count=1 | ts=2026-01-10T18:52:22.106987 | users=2
+2026-01-10 18:52:22,108 [INFO] ScannerService: SCAN_END | scan_id=1768042342106-8e43 | signals=0 | total_ms=1
