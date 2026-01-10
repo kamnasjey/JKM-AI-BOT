@@ -95,8 +95,17 @@ class TelegramNotifier:
             local_dt = signal.generated_at + timedelta(hours=tz_h)
             local_stamp = local_dt.strftime("%Y-%m-%d %H:%M")
 
-            engine_v = str(getattr(signal, "engine_version", "") or "").strip()
-            engine_line = f"🧠 <b>Engine:</b> {engine_v}\n" if engine_v else ""
+            user_label = str(getattr(signal, "user_label", "") or getattr(signal, "user_id", "") or "").strip()
+            if not user_label:
+                user_label = "NA"
+
+            strat_label = str(getattr(signal, "strategy_id", "") or "").strip()
+            if not strat_label:
+                # Back-compat fallback: older events only had engine_version/strategy_name.
+                strat_label = str(getattr(signal, "engine_version", "") or "").strip() or "NA"
+
+            user_line = f"👤 <b>Хэрэглэгч:</b> {user_label}\n" if user_label else ""
+            strat_line = f"🧩 <b>Strategy:</b> {strat_label}\n" if strat_label else ""
 
             caption = (
                 f"⚡ <b>{signal.pair}</b> – {dir_mn} {icon}\n"
@@ -106,7 +115,7 @@ class TelegramNotifier:
                 f"💵 <b>TP:</b> {signal.tp}\n"
                 f"⚖️ <b>RR:</b> {signal.rr:.2f}\n"
                 f"⏱ <b>TF:</b> {signal.timeframe}\n\n"
-                f"{engine_line}"
+                f"{user_line}{strat_line}"
                 f"🕒 <b>Time:</b> {local_stamp} (UTC{tz_h:+d})\n\n"
                 f"📝 <b>Шалтгаан:</b>\n{reasons_str}\n\n"
                 f"<i>#JKM_Bot_v1 #Signal</i>"

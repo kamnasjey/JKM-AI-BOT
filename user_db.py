@@ -67,6 +67,10 @@ def init_db() -> None:
         "email_verification_token_hash": "ALTER TABLE users ADD COLUMN email_verification_token_hash TEXT",
         "email_verification_expires_at": "ALTER TABLE users ADD COLUMN email_verification_expires_at TEXT",
         "created_at": "ALTER TABLE users ADD COLUMN created_at TEXT",
+        # Telegram connect columns (v0.2)
+        "telegram_chat_id": "ALTER TABLE users ADD COLUMN telegram_chat_id TEXT",
+        "telegram_enabled": "ALTER TABLE users ADD COLUMN telegram_enabled INTEGER DEFAULT 1",
+        "telegram_connected_ts": "ALTER TABLE users ADD COLUMN telegram_connected_ts INTEGER",
     }
     for column, ddl in migrations.items():
         if column not in existing_cols:
@@ -520,6 +524,87 @@ def set_last_str_update_day(user_id: str, day: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Telegram Connect Functions (v0.2)
+# ---------------------------------------------------------------------------
+def set_telegram_chat(user_id: str, chat_id: str) -> bool:
+    """Bind a Telegram chat_id to a user."""
+    init_db()
+    now_ts = int(datetime.utcnow().timestamp())
+    conn = _get_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET telegram_chat_id=?, telegram_connected_ts=?, telegram_enabled=1 WHERE user_id=?",
+            (str(chat_id), now_ts, str(user_id)),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_telegram_chat(user_id: str) -> Optional[str]:
+    """Get Telegram chat_id for a user."""
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT telegram_chat_id FROM users WHERE user_id=?",
+        (str(user_id),),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    return row["telegram_chat_id"] if row["telegram_chat_id"] else None
+
+
+def set_telegram_enabled(user_id: str, enabled: bool) -> bool:
+    """Enable/disable Telegram notifications for a user."""
+    init_db()
+    conn = _get_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET telegram_enabled=? WHERE user_id=?",
+            (1 if enabled else 0, str(user_id)),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_telegram_enabled(user_id: str) -> bool:
+    """Check if Telegram notifications are enabled for a user."""
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT telegram_enabled FROM users WHERE user_id=?",
+        (str(user_id),),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return False
+    val = row["telegram_enabled"]
+    return bool(val) if val is not None else True  # Default enabled
+
+
+def list_users_with_telegram() -> List[Dict[str, Any]]:
+    """List all users who have connected Telegram and have it enabled."""
+    conn = _get_connection()
+    rows = conn.execute(
+        "SELECT user_id, telegram_chat_id, telegram_enabled FROM users WHERE telegram_chat_id IS NOT NULL AND telegram_enabled=1"
+    ).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        result.append({
+            "user_id": row["user_id"],
+            "chat_id": row["telegram_chat_id"],
+        })
+    return result
 
 
 # Ensure DB is ready at import

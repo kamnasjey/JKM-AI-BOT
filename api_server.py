@@ -335,6 +335,28 @@ def engine_stop():
 def engine_manual_scan():
     return _engine.manual_scan()
 
+
+@app.post("/api/scan/manual-explain", dependencies=[Depends(require_internal_key)])
+def scan_manual_explain(payload: dict):
+    """Run a one-off manual scan for a specific user and return a Telegram-ready explanation.
+
+    Payload:
+      - user_id: str (required)
+      - symbols: list[str] (optional)
+    """
+
+    user_id = str(payload.get("user_id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id required")
+
+    symbols = payload.get("symbols")
+    if symbols is not None and not isinstance(symbols, list):
+        raise HTTPException(status_code=400, detail="symbols must be a list")
+
+    import scanner_service as ss
+
+    return ss.scanner_service.manual_scan_explain(user_id=user_id, symbols=symbols)
+
 # Dashboard login flow sometimes calls this; stop returning 404.
 # Keep it internal-key protected (recommended).
 @app.post("/api/auth/register", dependencies=[Depends(require_internal_key)])
@@ -572,3 +594,145 @@ async def copy_preset_to_user(
     strategies = data.get("strategies", [])
     result = save_user_strategies(user_id, strategies)
     return result
+
+
+# =========================
+# Telegram Connect Flow (v0.2)
+# =========================
+@app.post("/api/telegram/connect-url", dependencies=[Depends(require_internal_key)])
+def telegram_connect_url(payload: dict):
+    """Generate a Telegram deep link for user to connect their chat.
+    
+    Payload:
+      - user_id: str (required)
+    
+    Returns:
+      - ok: bool
+      - url: str (deep link to open bot with start token)
+    """
+    user_id = str(payload.get("user_id") or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id required")
+    
+    from core.event_queue import create_connect_token, init_db
+    
+    # Ensure DB exists
+    try:
+        init_db()
+    except Exception:
+        pass
+    
+    token = create_connect_token(user_id, expires_in_s=1800)  # 30 min
+    if not token:
+        raise HTTPException(status_code=500, detail="Failed to create connect token")
+    
+    bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "JKMCopilotBot")
+    deep_link = f"https://t.me/{bot_username}?start={token}"
+    
+    return {"ok": True, "url": deep_link, "expires_in_s": 1800}
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request, secret: str = ""):
+    """Telegram webhook endpoint for /start connect flow.
+    
+    Query param:
+      - secret: must match TELEGRAM_WEBHOOK_SECRET
+    """
+    expected_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+    if not expected_secret:
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+    if secret != expected_secret:
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
+    
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": True}  # Telegram expects 200 even on parse failure
+    
+    # Handle /start <token> message
+    message = body.get("message", {})
+    text = str(message.get("text") or "").strip()
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
+    
+    if not chat_id:
+        return {"ok": True}
+    
+    # Check for /start command with token
+    if text.startswith("/start "):
+        token = text[7:].strip()
+        if token:
+            from core.event_queue import validate_connect_token, init_db
+            from user_db import set_telegram_chat
+            
+            try:
+                init_db()
+            except Exception:
+                pass
+            
+            user_id = validate_connect_token(token)
+            if user_id:
+                # Bind chat_id to user
+                set_telegram_chat(user_id, str(chat_id))
+                
+                # Send confirmation message
+                try:
+                    from services.notifier_telegram import telegram_notifier
+                    telegram_notifier.send_message(
+                        "✅ Telegram connected!\n\nТа одоо setup илэрсэн үед Telegram-аар мэдэгдэл хүлээн авах болно.",
+                        chat_id=chat_id,
+                    )
+                except Exception:
+                    pass
+                
+                return {"ok": True, "connected": True}
+            else:
+                # Invalid/expired token
+                try:
+                    from services.notifier_telegram import telegram_notifier
+                    telegram_notifier.send_message(
+                        "❌ Token expired or invalid.\n\nШинэ холболтын линк авна уу.",
+                        chat_id=chat_id,
+                    )
+                except Exception:
+                    pass
+    
+    return {"ok": True}
+
+
+@app.get("/api/telegram/status/{user_id}", dependencies=[Depends(require_internal_key)])
+def telegram_status(user_id: str):
+    """Check Telegram connection status for a user."""
+    from user_db import get_telegram_chat, get_telegram_enabled
+    
+    chat_id = get_telegram_chat(user_id)
+    enabled = get_telegram_enabled(user_id)
+    
+    connected = bool(chat_id)
+    # Mask chat_id for security (show only last 4 digits)
+    masked_chat = f"***{str(chat_id)[-4:]}" if chat_id else None
+    
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "connected": connected,
+        "enabled": enabled,
+        "chat_id_masked": masked_chat,
+    }
+
+
+@app.post("/api/telegram/toggle/{user_id}", dependencies=[Depends(require_internal_key)])
+def telegram_toggle(user_id: str, payload: dict):
+    """Enable/disable Telegram notifications for a user.
+    
+    Payload:
+      - enabled: bool
+    """
+    from user_db import set_telegram_enabled
+    
+    enabled = bool(payload.get("enabled", True))
+    success = set_telegram_enabled(user_id, enabled)
+    
+    return {"ok": success, "user_id": user_id, "enabled": enabled}
+

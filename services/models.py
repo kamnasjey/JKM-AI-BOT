@@ -26,6 +26,11 @@ class SignalEvent(BaseModel):
 
     # Engine selection label (e.g. "ma_v1", "indicator_free_v1")
     engine_version: str = ""
+
+    # User/strategy attribution for notifications (optional, backward-compatible).
+    user_id: Optional[str] = None
+    user_label: Optional[str] = None
+    strategy_id: Optional[str] = None
     
     # Optional raw context (e.g. analysis text or chart buffer placeholder)
     analysis_text: Optional[str] = None

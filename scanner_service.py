@@ -46,6 +46,7 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 import threading
 
 from core.explain import build_pair_none_explain, build_pair_ok_explain
+from core import event_queue as _event_queue
 
 from metrics.scan_metrics import build_event_from_explain, emit_event
 from metrics.daily_summary import format_tuning_report, summarize_last_24h, write_daily_report
@@ -240,6 +241,12 @@ class ScannerService:
         # Ops snapshot (best-effort)
         self._last_scan_id: str = "NA"
         self._last_scan_ts: str = "NA"
+
+        # Initialize event queue DB (safe to call multiple times)
+        try:
+            _event_queue.init_db()
+        except Exception as _eq_err:
+            logger.warning("event_queue init failed: %s", type(_eq_err).__name__)
         
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -271,6 +278,137 @@ class ScannerService:
             sid = "NA"
             sts = "NA"
         return {"last_scan_id": sid, "last_scan_ts": sts}
+
+    def manual_scan_explain(
+        self,
+        *,
+        user_id: str,
+        symbols: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Run a one-off scan for a specific user and return a Telegram-ready explanation.
+
+        This is used for user-triggered manual scans ("why no setup?").
+        It does not send any operational/metrics Telegram messages.
+        """
+
+        uid = str(user_id or "default").strip() or "default"
+        sym_list: List[str] = []
+        if isinstance(symbols, list) and symbols:
+            sym_list = [str(s).strip().upper() for s in symbols if str(s).strip()]
+        if not sym_list:
+            try:
+                from watchlist_union import get_union_watchlist
+
+                sym_list = [str(s).strip().upper() for s in get_union_watchlist(max_per_user=15) or []]
+            except Exception:
+                sym_list = []
+        if not sym_list:
+            try:
+                sym_list = [str(s).strip().upper() for s in (getattr(config, "WATCH_PAIRS", []) or [])]
+            except Exception:
+                sym_list = []
+
+        # Best-effort: ensure background services are warm.
+        try:
+            if not getattr(self, "_thread", None) or not self._thread.is_alive():
+                self.start()
+                time.sleep(1.0)
+        except Exception:
+            pass
+
+        scan_id = make_scan_id()
+        outcomes: Dict[str, Any] = {}
+        user = {
+            "user_id": uid,
+            "name": uid,
+            "telegram_handle": "",
+            "watch_pairs": sym_list,
+        }
+
+        try:
+            signals_sent = int(
+                self._scan_for_user(
+                    user,
+                    scan_id=scan_id,
+                    outcomes=outcomes,
+                    notify_mode_override="off",
+                )
+                or 0
+            )
+        except Exception as e:
+            return {
+                "ok": False,
+                "user_id": uid,
+                "scan_id": scan_id,
+                "error": f"{type(e).__name__}: {e}",
+            }
+
+        # Build a concise explanation message.
+        lines: List[str] = []
+        lines.append("🔎 Manual scan result")
+        lines.append(f"user_id: {uid}")
+        lines.append(f"scan_id: {scan_id}")
+        lines.append("")
+
+        # Per-symbol summary
+        for sym in sym_list:
+            row = outcomes.get(sym) if isinstance(outcomes, dict) else None
+            if not isinstance(row, dict):
+                lines.append(f"{sym}: NO_DATA")
+                continue
+
+            kind = str(row.get("kind") or "NONE").upper()
+            if kind == "OK":
+                direction = str(row.get("direction") or "NA")
+                rr = row.get("rr")
+                rr_s = f"{float(rr):.2f}" if rr is not None else "NA"
+                lines.append(f"{sym}: ✅ SETUP {direction} (RR {rr_s})")
+            else:
+                reason = str(row.get("reason") or "NO_HITS")
+                lines.append(f"{sym}: ❌ {reason}")
+
+        # What conditions we are waiting for (based on enabled detectors)
+        try:
+            from core.user_strategies_store import load_user_strategies
+            from detectors.registry import get_detector
+
+            stored = load_user_strategies(uid)
+            active = stored[0] if isinstance(stored, list) and stored else {}
+            det_names = active.get("detectors") if isinstance(active, dict) else None
+            if isinstance(det_names, list) and det_names:
+                lines.append("")
+                lines.append("⏳ Waiting for these detector conditions:")
+                for name in det_names[:8]:
+                    n = str(name).strip()
+                    if not n:
+                        continue
+                    doc = ""
+                    try:
+                        det = get_detector(n)
+                        doc = det.get_doc() if det else ""
+                    except Exception:
+                        doc = ""
+                    doc = (doc or "").strip()
+                    if doc:
+                        # Keep first sentence-ish for Telegram brevity
+                        short = doc.split("\n", 1)[0].strip()
+                        if len(short) > 140:
+                            short = short[:140].rstrip() + "…"
+                        lines.append(f"- {n}: {short}")
+                    else:
+                        lines.append(f"- {n}")
+        except Exception:
+            pass
+
+        return {
+            "ok": True,
+            "user_id": uid,
+            "scan_id": scan_id,
+            "symbols": sym_list,
+            "signals_sent": signals_sent,
+            "outcomes": outcomes,
+            "message": "\n".join(lines).strip(),
+        }
 
     def _run_thread(self):
         # Create a new event loop for this thread
@@ -855,9 +993,10 @@ class ScannerService:
                             if parts:
                                 strat_str = "; ".join(parts)
 
-                        send_admin_coverage(
-                            f"🧩 Detector Coverage ({summary.date}): top={top_str} | dead={dead_str} | fixes={dead_fix} | per_strategy={strat_str}"
-                        )
+                        if _ops_telegram_enabled():
+                            send_admin_coverage(
+                                f"🧩 Detector Coverage ({summary.date}): top={top_str} | dead={dead_str} | fixes={dead_fix} | per_strategy={strat_str}"
+                            )
                 except Exception:
                     pass
                 try:
@@ -909,12 +1048,13 @@ class ScannerService:
                                 code=str((r or {}).get("code") or "NA"),
                             )
 
-                        if alerts_to_notify:
+                        if alerts_to_notify and _ops_telegram_enabled():
                             msg = format_alert_message(summary_dict, alerts_to_notify)
                             send_admin_alert(msg)
                         for r in recovered:
                             try:
-                                send_admin_recovery(str((r or {}).get("message") or ""))
+                                if _ops_telegram_enabled():
+                                    send_admin_recovery(str((r or {}).get("message") or ""))
                             except Exception:
                                 pass
 
@@ -937,11 +1077,12 @@ class ScannerService:
                                     recos=reco_msg,
                                     actions_count=actions_count,
                                 )
-                                # Append 1–3 compact before/after blocks.
-                                if patch_preview:
-                                    send_admin_report(reco_msg + "\n\nSuggested patches (dry-run):\n" + patch_preview)
-                                else:
-                                    send_admin_report(reco_msg)
+                                if _ops_telegram_enabled():
+                                    # Append 1–3 compact before/after blocks.
+                                    if patch_preview:
+                                        send_admin_report(reco_msg + "\n\nSuggested patches (dry-run):\n" + patch_preview)
+                                    else:
+                                        send_admin_report(reco_msg)
                         except Exception:
                             pass
                 except Exception:
@@ -1092,6 +1233,11 @@ class ScannerService:
         return local_dt.date().isoformat()
 
     def _maybe_notify_admin_data_gap(self, *, symbol: str, details: Dict[str, Any]) -> None:
+        # User requirement: only notify on setups found and on manual scans.
+        # Data-gap alerts are operational noise; keep them opt-in.
+        if not _ops_telegram_enabled():
+            return
+
         notify_mode = str(getattr(config, "NOTIFY_MODE", "all") or "all").strip().lower()
         if notify_mode != "admin_only":
             return
@@ -1310,7 +1456,14 @@ class ScannerService:
         except Exception:
             log_kv_error(logger, "STATE_SAVE_ERROR", scan_id=scan_id)
 
-    def _scan_for_user(self, user, *, scan_id: str) -> int:
+    def _scan_for_user(
+        self,
+        user,
+        *,
+        scan_id: str,
+        outcomes: Optional[Dict[str, Any]] = None,
+        notify_mode_override: Optional[str] = None,
+    ) -> int:
         uid = user.get("user_id") or user.get("telegram_handle") or "unknown"
         user_id = str(user.get("user_id") or uid)
         profile = user
@@ -1336,7 +1489,11 @@ class ScannerService:
             except Exception:
                 pass
 
-        notify_mode = str(getattr(config, "NOTIFY_MODE", "all") or "all").strip().lower()
+        notify_mode = (
+            str(notify_mode_override).strip().lower()
+            if notify_mode_override is not None
+            else str(getattr(config, "NOTIFY_MODE", "all") or "all").strip().lower()
+        )
         load_res = load_strategies_from_profile(merged_profile)
         strategies = load_res.strategies
         profile_errors = list(load_res.errors)
@@ -1367,12 +1524,19 @@ class ScannerService:
             default_entry_tf = "NA"
 
         for pair in pairs:
+            t_symbol = time.perf_counter()
             symbol = pair.strip().upper()
             # If profile strategy config is invalid, do not proceed with scanning.
             if not strategies and profile_errors:
                 extra: Dict[str, Any] = {}
                 if notify_mode == "admin_only":
                     extra["profile_errors"] = ";".join([str(e) for e in profile_errors[:6]])
+                if isinstance(outcomes, dict):
+                    outcomes[str(symbol).upper()] = {
+                        "kind": "NONE",
+                        "reason": "PROFILE_INVALID",
+                        "internal_reason": "profile_invalid",
+                    }
                 try:
                     payload = build_pair_none_explain(
                         symbol=symbol,
@@ -1400,14 +1564,18 @@ class ScannerService:
                 continue
 
 
-            t_symbol = time.perf_counter()
-
             t_market = time.perf_counter()
             raw_5m = market_cache.get_candles(symbol)
             market_cache_get_ms = (time.perf_counter() - t_market) * 1000.0
             market_cache_hit = bool(raw_5m)
             if not raw_5m:
                 r_out = normalize_pair_none_reason(["no_m5"])
+                if isinstance(outcomes, dict):
+                    outcomes[str(symbol).upper()] = {
+                        "kind": "NONE",
+                        "reason": r_out,
+                        "internal_reason": "no_m5",
+                    }
                 try:
                     payload = build_pair_none_explain(
                         symbol=symbol,
@@ -1468,6 +1636,18 @@ class ScannerService:
                 need2 = int(details.get("need_entry") or min_entry_bars)
 
                 r_out = normalize_pair_none_reason(["data_gap"])
+                if isinstance(outcomes, dict):
+                    outcomes[str(symbol).upper()] = {
+                        "kind": "NONE",
+                        "reason": r_out,
+                        "internal_reason": "data_gap",
+                        "have_trend": have1,
+                        "need_trend": need1,
+                        "have_entry": have2,
+                        "need_entry": need2,
+                        "trend_tf": str(details.get("trend_tf") or trend_tf),
+                        "entry_tf": str(details.get("entry_tf") or entry_tf),
+                    }
                 try:
                     payload = build_pair_none_explain(
                         symbol=symbol,
@@ -1541,6 +1721,12 @@ class ScannerService:
                     exc=str(_eng_exc)[:200],
                     tb=traceback.format_exc()[-500:],
                 )
+                if isinstance(outcomes, dict):
+                    outcomes[str(symbol).upper()] = {
+                        "kind": "ERROR",
+                        "reason": "ENGINE_ERROR",
+                        "internal_reason": str(type(_eng_exc).__name__),
+                    }
                 continue
             engine_ms = (time.perf_counter() - t_engine) * 1000.0
 
@@ -1804,6 +1990,13 @@ class ScannerService:
                     ms_total=f"{ms_total:.2f}",
                 )
 
+                if isinstance(outcomes, dict):
+                    outcomes[str(symbol).upper()] = {
+                        "kind": "NONE",
+                        "reason": str(reason),
+                        "strategy_id": str(strategy_id or "NA"),
+                    }
+
             if result.has_setup and result.setup is not None:
                 # Keep original arbitration summary from engine (winner before governance).
                 base_debug = debug if isinstance(debug, dict) else {}
@@ -1881,6 +2074,15 @@ class ScannerService:
                         **gov_flat,
                         ms_total=f"{ms_total:.2f}",
                     )
+
+                    if isinstance(outcomes, dict):
+                        outcomes[str(symbol).upper()] = {
+                            "kind": "NONE",
+                            "reason": str(r_out),
+                            "strategy_id": str(strategy_id or "NA"),
+                            "blocked_winner_strategy_id": blocked_winner_strategy_id,
+                            "blocked_reason": str(r_out),
+                        }
                     continue
 
                 if chosen_result is not result:
@@ -1930,6 +2132,9 @@ class ScannerService:
                     reasons=reasons,
                     tz_offset_hours=tz_offset_hours,
                     engine_version=(engine_version or (result.strategy_name or "")),
+                    user_id=str(user_id),
+                    user_label=str(uid),
+                    strategy_id=str(strategy_id or ""),
                 )
 
                 # --- Quality / spam controls (pre-send) ---
@@ -1989,6 +2194,15 @@ class ScannerService:
                         min_score=f"{min_score:.2f}",
                         ms_total=f"{ms_total:.2f}",
                     )
+
+                    if isinstance(outcomes, dict):
+                        outcomes[str(symbol).upper()] = {
+                            "kind": "NONE",
+                            "reason": str(r_out),
+                            "strategy_id": str(strategy_id or "NA"),
+                            "score": score_val,
+                            "min_score": min_score,
+                        }
                     continue
 
                 # Daily per-symbol cap
@@ -2210,6 +2424,54 @@ class ScannerService:
                     ms_total=f"{ms_total:.2f}",
                 )
 
+                # Enqueue event for async worker processing (non-blocking)
+                try:
+                    _enqueue_ts = time.perf_counter()
+                    _eq_payload = {
+                        "scan_id": str(scan_id),
+                        "user_id": str(user_id),
+                        "detector": "soft_combine",
+                        "direction": str(selected.get("direction") or ""),
+                        "entry": float(getattr(setup, "entry", 0.0)),
+                        "sl": float(getattr(setup, "sl", 0.0)),
+                        "tp": float(getattr(setup, "tp", 0.0)),
+                        "rr": float(getattr(setup, "rr", 0.0)),
+                        "score": float(selected.get("score") or 0.0),
+                        "strategy_id": str(strategy_id or ""),
+                        "detectors": selected.get("detectors"),
+                        "regime": str(selected.get("regime") or ""),
+                        "ts": int(now_ts),
+                    }
+                    _eq_id = _event_queue.enqueue_event(
+                        symbol=symbol,
+                        tf=str(entry_tf),
+                        setup_type="SETUP_FOUND",
+                        setup_key=signal_key,
+                        payload=_eq_payload,
+                    )
+                    _enqueue_ms = (time.perf_counter() - _enqueue_ts) * 1000.0
+                    if _eq_id:
+                        log_kv(logger, "EVENT_ENQUEUE", scan_id=scan_id, symbol=symbol, event_id=_eq_id[:8], ms=f"{_enqueue_ms:.2f}")
+                except Exception as _eq_err:
+                    log_kv_error(logger, "EVENT_ENQUEUE_ERROR", scan_id=scan_id, symbol=symbol, err=str(type(_eq_err).__name__))
+
+                if isinstance(outcomes, dict):
+                    try:
+                        outcomes[str(symbol).upper()] = {
+                            "kind": "OK",
+                            "strategy_id": str(strategy_id or "NA"),
+                            "direction": str(getattr(setup, "direction", None) or selected.get("direction") or "NA"),
+                            "entry": float(getattr(setup, "entry", 0.0)),
+                            "sl": float(getattr(setup, "sl", 0.0)),
+                            "tp": float(getattr(setup, "tp", 0.0)),
+                            "rr": float(getattr(setup, "rr", 0.0)),
+                        }
+                    except Exception:
+                        outcomes[str(symbol).upper()] = {
+                            "kind": "OK",
+                            "strategy_id": str(strategy_id or "NA"),
+                        }
+
                 # Contract sanity: avoid winner/strategy mismatch in logs.
                 try:
                     if str(strategy_id) != str(strategy_id):
@@ -2290,6 +2552,18 @@ class ScannerService:
 # SCAN_END | scan_id=... | signals=3 | total_ms=812
 
 scanner_service = ScannerService()
+
+
+def _ops_telegram_enabled() -> bool:
+    """Whether to send non-signal operational Telegram messages.
+
+    Default: OFF to avoid noisy spam. Signals (setups found) are unaffected.
+    Enable by setting env `TELEGRAM_OPS_NOTIFICATIONS=1`.
+    """
+    try:
+        return str(os.getenv("TELEGRAM_OPS_NOTIFICATIONS", "0") or "0").strip() == "1"
+    except Exception:
+        return False
 
 
 def start() -> dict:

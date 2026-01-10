@@ -1,5 +1,6 @@
 # telegram_bot.py
 import logging
+import os
 import time
 import json
 import httpx
@@ -13,7 +14,8 @@ from config import (
 )
 
 # --- Configuration ---
-API_BASE_URL = "http://127.0.0.1:8000/api"
+API_ROOT_URL = os.getenv("API_ROOT_URL", "http://127.0.0.1:8000").rstrip("/")
+API_BASE_URL = f"{API_ROOT_URL}/api"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 logging.basicConfig(
@@ -103,52 +105,44 @@ def handle_message(msg: Dict):
     # 2. Status
     if text == "/status":
         try:
-            resp = httpx.get(f"{API_BASE_URL}/status")
+            resp = httpx.get(f"{API_ROOT_URL}/health", timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 send_message(chat_id, f"✅ <b>System Online</b>\n{json.dumps(data, indent=2)}")
             else:
                 send_message(chat_id, "⚠️ API Error")
         except:
-            send_message(chat_id, "❌ API Unreachable (Check web_app.py)")
+            send_message(chat_id, "❌ API Unreachable")
         return
         
     # 3. Manual Scan
     if text == "/scan":
-        send_message(chat_id, "🚀 Triggering Scan...")
+        send_message(chat_id, "🚀 Running manual scan...")
         try:
-            # 1. Login as Admin
-            login_payload = {
-                "email": "admin@jkm.com", # Default fallback if env not set
-                "password": "admin"
-            }
-            # Try to get from config defaults if available (though config.py reads env)
-            # We hardcode fallback because default EnsureAdmin uses these.
-            # If user changed them in DB but not env, this fails.
-            # But specific user request: "scan hiiheer ... error garch baina".
-            
-            # Better: use credentials from config
-            from config import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
-            if DEFAULT_ADMIN_EMAIL and DEFAULT_ADMIN_PASSWORD:
-                login_payload["email"] = DEFAULT_ADMIN_EMAIL
-                login_payload["password"] = DEFAULT_ADMIN_PASSWORD
-                
-            auth_resp = httpx.post(f"{API_BASE_URL}/auth/login", json=login_payload, timeout=5)
-            
-            if auth_resp.status_code != 200:
-                send_message(chat_id, f"⚠️ Auth Failed: {auth_resp.status_code}")
+            internal_key = str(os.getenv("INTERNAL_API_KEY") or "").strip()
+            if not internal_key:
+                send_message(chat_id, "❌ INTERNAL_API_KEY is not configured on this bot host")
                 return
 
-            token = auth_resp.json().get("token")
-            headers = {"Authorization": f"Bearer {token}"}
-            
-            # 2. Trigger Scan
-            scan_resp = httpx.get(f"{API_BASE_URL}/scan/manual", headers=headers, timeout=30)
-            
-            if scan_resp.status_code == 200:
-                send_message(chat_id, "✅ Scan process initiated. Check for signals.")
+            headers = {"x-internal-api-key": internal_key}
+            payload = {"user_id": str(user_id)}
+            scan_resp = httpx.post(
+                f"{API_BASE_URL}/scan/manual-explain",
+                headers=headers,
+                json=payload,
+                timeout=60,
+            )
+
+            if scan_resp.status_code != 200:
+                send_message(chat_id, f"⚠️ Scan failed: {scan_resp.status_code}")
+                return
+
+            data = scan_resp.json() if scan_resp.content else {}
+            msg = str(data.get("message") or "")
+            if msg:
+                send_message(chat_id, msg)
             else:
-                send_message(chat_id, f"⚠️ Scan Trigger Failed: {scan_resp.status_code}")
+                send_message(chat_id, "✅ Scan completed (no explanation returned)")
                 
         except Exception as e:
             logger.error(f"Scan Trigger Error: {e}")

@@ -1,0 +1,16 @@
+[Unit]
+Description=JKM Worker (queue consume + telegram notify)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/JKM-AI-BOT
+ExecStart=/usr/bin/docker compose exec -T backend python worker_main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
