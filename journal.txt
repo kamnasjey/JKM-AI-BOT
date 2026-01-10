@@ -235,3 +235,35 @@ EVIDENCE_LOGS:
   - SCAN_START pairs=15 scan_id=1767960324845-8a50
   - SCAN_END scan_id=1767960324845-8a50 signals=0
   - data_gap=NONE
+
+===== 2026-01-10T04:54:31Z (PHASE B PROOF: 15 symbols × 30d M5 + stability) =====
+RESULT: PASS
+DONE:
+  - Backfilled Massive watchlist (15 symbols) for 30 days on M5 with chunk_days=7 and --validate.
+  - Confirmed persistence on disk under state/marketdata/<SYMBOL>/m5.csv.gz + m5.meta.json.
+  - Ran /api/engine/manual-scan 3 times; scan loop stable; no data_gap observed.
+NOW:
+  - Phase B scale proof complete.
+NEXT:
+  - Phase C: 15 symbols × 2 years M5, chunk + resume, then restart and re-scan.
+EVIDENCE_BACKFILL:
+  - Backfill complete total_written=19665
+  - Note: VALIDATE_WARN shows gaps; expected for sparse/market-closed periods and provider partial windows.
+EVIDENCE_PERSISTENCE:
+  - du -sh state/marketdata -> 680K
+  - top files (bytes): BTCUSD=55284, XAUUSD=43085, GBPJPY=41665, EURUSD=41461
+  - meta spot-check:
+    - EURUSD rows_count=4987 first_ts=2025-12-11T21:31:00+00:00 last_ts=2026-01-09T21:59:00+00:00 provider=MASSIVE
+    - XAUUSD rows_count=3214 first_ts=2025-12-11T20:31:00+00:00 last_ts=2026-01-09T21:59:00+00:00 provider=MASSIVE
+    - BTCUSD rows_count=3703 first_ts=2025-12-11T21:31:00+00:00 last_ts=2026-01-10T04:40:00+00:00 provider=MASSIVE
+EVIDENCE_SCANS:
+  - manual-scan #1 ok=true scan_id=1768020853957-7e8b
+  - manual-scan #2 ok=true scan_id=1768020862785-f3a2
+  - manual-scan #3 ok=true scan_id=1768020871165-552f
+EVIDENCE_LOGS:
+  - MARKETDATA_LOAD source=disk symbol=EURUSD tf=m5 rows=4987 last_ts=2026-01-09T21:59:00+00:00
+  - MARKETDATA_LOAD source=disk_resample symbol=EURUSD tf=h1 rows=253 last_ts=2026-01-09T21:00:00+00:00
+  - MARKETDATA_LOAD source=disk_resample symbol=EURUSD tf=h4 rows=69 last_ts=2026-01-09T20:00:00+00:00
+  - SCAN_START pairs=15 (3 consecutive runs)
+  - SCAN_END signals=0 (3 consecutive runs)
+  - data_gap=NONE
