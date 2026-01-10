@@ -845,3 +845,38 @@ INFO:     172.18.0.1:47898 - "POST /api/user/test_quota_user/strategies HTTP/1.1
 2026-01-10 18:52:20,105 [INFO] ScannerService: SCAN_END | scan_id=1768042340104-4073 | signals=0 | total_ms=1
 2026-01-10 18:52:22,107 [INFO] ScannerService: SCAN_START | pairs=0 | scan_id=1768042342106-8e43 | strategies_count=1 | ts=2026-01-10T18:52:22.106987 | users=2
 2026-01-10 18:52:22,108 [INFO] ScannerService: SCAN_END | scan_id=1768042342106-8e43 | signals=0 | total_ms=1
+
+
+===== 2026-01-10T12:45:00Z (BACKEND v0.1 FINALIZE) =====
+RESULT: PASS
+TASK: Final backend polish + frontend handoff preparation
+
+FIXES APPLIED:
+1. core/ops.py (line ~107): Fixed UnboundLocalError
+   - Bug: shadow_all used before reading from env
+   - Fix: shadow_all_env = os.getenv("SHADOW_ALL_DETECTORS", "0") FIRST
+   
+2. engine/utils/reason_codes.py: Added missing aliases
+   - NO_SWING → NO_HITS
+   - FIBO_FAIL → NO_HITS  
+   - NO_ENABLED_DETECTORS → NO_DETECTORS_FOR_REGIME
+   - ALL_SIGNALS_FILTERED_BY_RR → RR_BELOW_MIN
+   - DETECTOR_ERROR → UNKNOWN_ERROR
+   - Added prefix normalization: FIBO_FAIL*, DETECTOR_ERROR|*
+
+PROOF (logs tail-300):
+  UNKNOWN_ERROR count: 0
+  Traceback count: 0
+  PAIR_NONE count: 60 (all reason=NO_HITS ✓)
+
+PRODUCTION CONFIG:
+  DEBUG_INGEST=0 (turned off)
+  provider_configured=true
+  cache.symbols=15
+  health.ok=true
+
+COMMIT: 59d1603 → feature/v0.3-quota-limiter (pushed)
+
+NOW: Backend v0.1 ready for frontend integration
+NEXT: Frontend team consumes /api/signals, /health, /api/engine/manual-scan
+
