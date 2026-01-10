@@ -117,3 +117,56 @@ def save_user_strategies(user_id: str, raw_items: Any) -> Dict[str, Any]:
         "strategies": normalized,
         "warnings": errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# Helper: get enabled symbols for a user (for pair quota + worker routing)
+# ---------------------------------------------------------------------------
+def get_enabled_symbols_for_user(user_id: str) -> set:
+    """Return set of distinct symbols with enabled strategies for this user.
+    
+    A symbol is considered enabled if ANY strategy with enabled=True references it
+    in the 'symbols' list. If a strategy has no 'symbols' list, it applies to ALL
+    symbols (returned as special marker '__ALL__').
+    """
+    strategies = load_user_strategies(user_id)
+    symbols: set = set()
+    
+    for strat in strategies:
+        if not isinstance(strat, dict):
+            continue
+        # Check if strategy is enabled
+        enabled = strat.get("enabled", True)
+        if not enabled:
+            continue
+        
+        # Get symbols list
+        strat_symbols = strat.get("symbols")
+        if not strat_symbols or not isinstance(strat_symbols, list):
+            # No symbols filter means ALL symbols
+            symbols.add("__ALL__")
+        else:
+            for sym in strat_symbols:
+                if isinstance(sym, str) and sym.strip():
+                    symbols.add(sym.strip().upper())
+    
+    return symbols
+
+
+def count_enabled_symbols(user_id: str) -> int:
+    """Count distinct enabled symbols for a user.
+    
+    Returns 999 if '__ALL__' is present (no symbol restriction).
+    """
+    symbols = get_enabled_symbols_for_user(user_id)
+    if "__ALL__" in symbols:
+        return 999  # Effectively unlimited
+    return len(symbols)
+
+
+def user_has_symbol_enabled(user_id: str, symbol: str) -> bool:
+    """Check if user has this symbol enabled via any strategy."""
+    symbols = get_enabled_symbols_for_user(user_id)
+    if "__ALL__" in symbols:
+        return True
+    return symbol.strip().upper() in symbols

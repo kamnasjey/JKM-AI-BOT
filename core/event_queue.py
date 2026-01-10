@@ -81,11 +81,21 @@ CREATE TABLE IF NOT EXISTS connect_tokens (
 );
 """
 
+_SCHEMA_BURST_LIMITER = """
+CREATE TABLE IF NOT EXISTS burst_limiter (
+    user_id TEXT NOT NULL,
+    tick_id TEXT NOT NULL,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, tick_id)
+);
+"""
+
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_queue_status_next ON queue_events(status, next_attempt_ts);",
     "CREATE INDEX IF NOT EXISTS idx_delivery_user_setup ON telegram_deliveries(user_id, setup_key);",
     "CREATE INDEX IF NOT EXISTS idx_delivery_cooldown ON telegram_deliveries(cooldown_until_ts);",
     "CREATE INDEX IF NOT EXISTS idx_connect_expires ON connect_tokens(expires_ts);",
+    "CREATE INDEX IF NOT EXISTS idx_burst_tick ON burst_limiter(tick_id);",
 ]
 
 
@@ -97,6 +107,7 @@ def init_db() -> None:
             conn.execute(_SCHEMA_QUEUE_EVENTS)
             conn.execute(_SCHEMA_TELEGRAM_DELIVERIES)
             conn.execute(_SCHEMA_CONNECT_TOKENS)
+            conn.execute(_SCHEMA_BURST_LIMITER)
             for idx in _INDEXES:
                 conn.execute(idx)
             conn.commit()
@@ -404,6 +415,77 @@ def cleanup_old_tokens(older_than_days: int = 7) -> int:
         conn = _get_conn()
         try:
             cursor = conn.execute("DELETE FROM connect_tokens WHERE expires_ts < ?", (cutoff_ts,))
+            deleted = cursor.rowcount
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return deleted
+
+
+# ---------------------------------------------------------------------------
+# Burst Limiter API (v0.3)
+# ---------------------------------------------------------------------------
+def get_burst_count(user_id: str, tick_id: str) -> int:
+    """Get current burst count for user in this tick."""
+    try:
+        conn = _get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT sent_count FROM burst_limiter WHERE user_id=? AND tick_id=?",
+                (user_id, tick_id),
+            )
+            row = cursor.fetchone()
+            return row["sent_count"] if row else 0
+        finally:
+            conn.close()
+    except Exception:
+        return 0
+
+
+def increment_burst_count(user_id: str, tick_id: str) -> int:
+    """Increment burst count for user in this tick. Returns new count."""
+    try:
+        conn = _get_conn()
+        try:
+            # Upsert pattern
+            conn.execute(
+                """
+                INSERT INTO burst_limiter (user_id, tick_id, sent_count)
+                VALUES (?, ?, 1)
+                ON CONFLICT(user_id, tick_id) DO UPDATE SET sent_count = sent_count + 1
+                """,
+                (user_id, tick_id),
+            )
+            conn.commit()
+            
+            cursor = conn.execute(
+                "SELECT sent_count FROM burst_limiter WHERE user_id=? AND tick_id=?",
+                (user_id, tick_id),
+            )
+            row = cursor.fetchone()
+            return row["sent_count"] if row else 1
+        finally:
+            conn.close()
+    except Exception:
+        return 1
+
+
+def cleanup_old_bursts(older_than_hours: int = 2) -> int:
+    """Remove old burst records. tick_id format assumed to be timestamp-based."""
+    # Since tick_id may be scan_id like "1768040530683-807b", extract timestamp prefix
+    # We'll clean up by keeping only recent tick_ids
+    # For simplicity, just delete all records older than a certain age based on a heuristic
+    # Better: just truncate table periodically since burst is per-tick ephemeral
+    deleted = 0
+    try:
+        conn = _get_conn()
+        try:
+            # Keep last 1000 entries max
+            cursor = conn.execute(
+                "DELETE FROM burst_limiter WHERE rowid NOT IN (SELECT rowid FROM burst_limiter ORDER BY rowid DESC LIMIT 1000)"
+            )
             deleted = cursor.rowcount
             conn.commit()
         finally:

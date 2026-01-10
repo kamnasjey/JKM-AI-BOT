@@ -730,3 +730,72 @@ IDEAS:
 - Add worker lag alerting (if lag > 30s, alert admin)
 - Cleanup old queue events (older than 7 days)
 
+
+===== 2026-01-10T18:40:00Z (v0.3 LIMITER + PAIR QUOTA + STRATEGY-BASED NOTIFY) =====
+
+GOAL:
+- Notifications go ONLY to users who have an ENABLED strategy on that symbol
+- Pair quota enforcement: default 5 symbols per user, reject if exceeded
+- Burst limiter: max 3 messages per user per scan tick
+- All logging masked (no user_id/chat_id exposed)
+
+DONE:
+1. DATA MODEL (user_db.py):
+   - Added columns: max_pairs_in_plan, extra_pairs, billing_status
+   - Added functions: get_user_quota(), set_user_quota()
+   - Updated list_users_with_telegram() to include billing_status
+
+2. USER_STRATEGIES_STORE (core/user_strategies_store.py):
+   - Added: get_enabled_symbols_for_user(user_id) → set[str]
+   - Added: count_enabled_symbols(user_id) → int
+   - Added: user_has_symbol_enabled(user_id, symbol) → bool
+
+3. EVENT_QUEUE (core/event_queue.py):
+   - Added burst_limiter table: (user_id, tick_id, sent_count)
+   - Added: get_burst_count(), increment_burst_count(), cleanup_old_bursts()
+
+4. API ENFORCEMENT (api_server.py):
+   - POST /api/user/{user_id}/strategies now checks pair quota
+   - POST /api/user/{user_id}/strategies/from-preset/{preset_id} also checks
+   - Returns 400 with error=PAIR_QUOTA_EXCEEDED if count > allowed_pairs
+   - Added: GET /api/billing/quota/{user_id} - show user's quota info
+   - Added: POST /api/billing/quota/{user_id} - update quota (admin)
+
+5. WORKER ROUTING (worker_main.py v0.3):
+   - Filter 1: billing_status must be 'active'
+   - Filter 2: user_has_symbol_enabled(user_id, event.symbol)
+   - Filter 3: quota mismatch check (skip if exceeded)
+   - Filter 4: cooldown/dedupe check
+   - Filter 5: burst limit check (max 3 per user per tick)
+   - Structured logging: WORKER_FILTER, WORKER_BURST_DROP, WORKER_COOLDOWN_DROP, NOTIFY_SENT
+
+PROOF:
+✓ Test 1: User with 5 allowed pairs tries to enable 6th → rejected with PAIR_QUOTA_EXCEEDED
+✓ Test 2: Burst counter increments correctly (0 → 1 → 2 → 3)
+✓ Test 3: Queue events enqueued and processed by worker
+✓ Test 4: All QA tests pass (10/10)
+
+MODIFIED FILES:
+- user_db.py (billing columns + quota functions)
+- core/user_strategies_store.py (enabled symbols helpers)
+- core/event_queue.py (burst limiter table + functions)
+- api_server.py (quota enforcement + billing endpoints)
+- worker_main.py (v0.3 with routing/filtering/burst logic)
+
+DETECTOR/ENGINE IMPACT: NONE
+- All detector logic untouched
+- All engine scoring untouched
+- Filtering happens ONLY in worker, AFTER event is enqueued
+
+NOW:
+- Pair quota enforced at strategy save time
+- Symbol-based routing in worker
+- Burst limiting prevents notification spam
+- All user IDs masked in logs
+
+NEXT:
+- Frontend: add quota display in user settings
+- Frontend: allow users to select which symbols to subscribe
+- Billing integration: stub exists, connect to payment provider
+- Test with real setup signal to confirm end-to-end flow
+

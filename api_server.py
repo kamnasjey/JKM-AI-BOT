@@ -535,6 +535,61 @@ async def get_user_strategies(user_id: str, api_key: str = Depends(require_inter
     return {"ok": True, "user_id": user_id, "strategies": strategies, "count": len(strategies)}
 
 
+def _count_symbols_in_strategies(strategies: list) -> int:
+    """Count distinct symbols from a list of strategy dicts."""
+    symbols: set = set()
+    for strat in strategies:
+        if not isinstance(strat, dict):
+            continue
+        enabled = strat.get("enabled", True)
+        if not enabled:
+            continue
+        strat_symbols = strat.get("symbols")
+        if not strat_symbols or not isinstance(strat_symbols, list):
+            return 999  # No symbol filter = unlimited
+        for sym in strat_symbols:
+            if isinstance(sym, str) and sym.strip():
+                symbols.add(sym.strip().upper())
+    return len(symbols)
+
+
+def _check_pair_quota(user_id: str, strategies: list) -> dict:
+    """Check if user can save these strategies within pair quota.
+    
+    Returns {"ok": True} or {"ok": False, "error": "PAIR_QUOTA_EXCEEDED", ...}
+    """
+    from user_db import get_user_quota
+    
+    quota = get_user_quota(user_id)
+    allowed_pairs = quota.get("allowed_pairs", 5)
+    
+    # Count symbols in the new strategies
+    new_symbol_count = _count_symbols_in_strategies(strategies)
+    
+    # 999 means no restriction (all symbols) - only allowed if billing supports it
+    if new_symbol_count == 999:
+        # Allow "all symbols" only if allowed_pairs is very high or billing is premium
+        if allowed_pairs < 50:
+            return {
+                "ok": False,
+                "error": "PAIR_QUOTA_EXCEEDED",
+                "detail": "Strategies without symbol filter require premium plan",
+                "allowed_pairs": allowed_pairs,
+                "current_pairs": new_symbol_count,
+            }
+    
+    if new_symbol_count > allowed_pairs:
+        return {
+            "ok": False,
+            "error": "PAIR_QUOTA_EXCEEDED",
+            "detail": f"You have {new_symbol_count} symbols but only {allowed_pairs} allowed",
+            "allowed_pairs": allowed_pairs,
+            "current_pairs": new_symbol_count,
+        }
+    
+    return {"ok": True, "allowed_pairs": allowed_pairs, "current_pairs": new_symbol_count}
+
+
 @app.post("/api/user/{user_id}/strategies")
 async def save_user_strategies_endpoint(
     user_id: str,
@@ -547,15 +602,25 @@ async def save_user_strategies_endpoint(
     Each strategy should have:
       - strategy_id: unique name
       - enabled: true/false
+      - symbols: ["EURUSD", "XAUUSD", ...] (required for quota check)
       - detectors: ["detector1", "detector2", ...]
       - min_score: float (default 1.0)
       - min_rr: float (default 2.0)
       - allowed_regimes: ["RANGE", "TREND_BULL", "TREND_BEAR", "CHOP"]
+    
+    Returns 400 with PAIR_QUOTA_EXCEEDED if symbol count exceeds user's allowed pairs.
     """
     from core.user_strategies_store import save_user_strategies
     
     strategies = payload.get("strategies", [])
+    
+    # Check pair quota before saving
+    quota_check = _check_pair_quota(user_id, strategies)
+    if not quota_check.get("ok"):
+        raise HTTPException(status_code=400, detail=quota_check)
+    
     result = save_user_strategies(user_id, strategies)
+    result["quota"] = quota_check
     return result
 
 
@@ -592,8 +657,76 @@ async def copy_preset_to_user(
         raise HTTPException(status_code=500, detail=f"Failed to load preset: {e}")
     
     strategies = data.get("strategies", [])
+    
+    # Check pair quota before saving
+    quota_check = _check_pair_quota(user_id, strategies)
+    if not quota_check.get("ok"):
+        raise HTTPException(status_code=400, detail=quota_check)
+    
     result = save_user_strategies(user_id, strategies)
+    result["quota"] = quota_check
     return result
+
+
+# =========================
+# Billing / Quota Endpoints (v0.3)
+# =========================
+@app.get("/api/billing/quota/{user_id}")
+async def get_billing_quota(user_id: str, api_key: str = Depends(require_internal_key)):
+    """Get user's pair quota information.
+    
+    Returns:
+      - allowed_pairs: max_pairs_in_plan + extra_pairs (if billing active)
+      - current_pairs: count of distinct enabled symbols
+      - max_pairs_in_plan: base plan limit
+      - extra_pairs: purchased extra pairs
+      - billing_status: 'active' or 'inactive'
+    """
+    from user_db import get_user_quota
+    from core.user_strategies_store import count_enabled_symbols
+    
+    quota = get_user_quota(user_id)
+    current_pairs = count_enabled_symbols(user_id)
+    
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "allowed_pairs": quota.get("allowed_pairs", 0),
+        "current_pairs": current_pairs if current_pairs < 999 else "unlimited",
+        "max_pairs_in_plan": quota.get("max_pairs_in_plan", 5),
+        "extra_pairs": quota.get("extra_pairs", 0),
+        "billing_status": quota.get("billing_status", "active"),
+    }
+
+
+@app.post("/api/billing/quota/{user_id}")
+async def update_billing_quota(
+    user_id: str,
+    payload: dict = Body(...),
+    api_key: str = Depends(require_internal_key)
+):
+    """Update user's quota/billing fields (admin only).
+    
+    Body (all optional):
+      - max_pairs_in_plan: int
+      - extra_pairs: int
+      - billing_status: str ('active' or 'inactive')
+    """
+    from user_db import set_user_quota, get_user_quota
+    
+    success = set_user_quota(
+        user_id,
+        max_pairs_in_plan=payload.get("max_pairs_in_plan"),
+        extra_pairs=payload.get("extra_pairs"),
+        billing_status=payload.get("billing_status"),
+    )
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update quota")
+    
+    # Return updated quota
+    quota = get_user_quota(user_id)
+    return {"ok": True, "user_id": user_id, **quota}
 
 
 # =========================

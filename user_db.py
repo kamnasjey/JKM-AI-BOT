@@ -71,6 +71,10 @@ def init_db() -> None:
         "telegram_chat_id": "ALTER TABLE users ADD COLUMN telegram_chat_id TEXT",
         "telegram_enabled": "ALTER TABLE users ADD COLUMN telegram_enabled INTEGER DEFAULT 1",
         "telegram_connected_ts": "ALTER TABLE users ADD COLUMN telegram_connected_ts INTEGER",
+        # Billing/entitlement columns (v0.3)
+        "max_pairs_in_plan": "ALTER TABLE users ADD COLUMN max_pairs_in_plan INTEGER DEFAULT 5",
+        "extra_pairs": "ALTER TABLE users ADD COLUMN extra_pairs INTEGER DEFAULT 0",
+        "billing_status": "ALTER TABLE users ADD COLUMN billing_status TEXT DEFAULT 'active'",
     }
     for column, ddl in migrations.items():
         if column not in existing_cols:
@@ -595,16 +599,85 @@ def list_users_with_telegram() -> List[Dict[str, Any]]:
     """List all users who have connected Telegram and have it enabled."""
     conn = _get_connection()
     rows = conn.execute(
-        "SELECT user_id, telegram_chat_id, telegram_enabled FROM users WHERE telegram_chat_id IS NOT NULL AND telegram_enabled=1"
+        "SELECT user_id, telegram_chat_id, telegram_enabled, billing_status FROM users WHERE telegram_chat_id IS NOT NULL AND telegram_enabled=1"
     ).fetchall()
     conn.close()
     result = []
     for row in rows:
+        billing = row["billing_status"] if "billing_status" in row.keys() else "active"
         result.append({
             "user_id": row["user_id"],
             "chat_id": row["telegram_chat_id"],
+            "billing_status": billing or "active",
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Billing / Pair Quota Functions (v0.3)
+# ---------------------------------------------------------------------------
+def get_user_quota(user_id: str) -> Dict[str, Any]:
+    """Get pair quota info for a user."""
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT max_pairs_in_plan, extra_pairs, billing_status FROM users WHERE user_id=?",
+        (str(user_id),),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return {"max_pairs_in_plan": 5, "extra_pairs": 0, "billing_status": "inactive", "allowed_pairs": 0}
+    
+    max_p = row["max_pairs_in_plan"] if row["max_pairs_in_plan"] is not None else 5
+    extra = row["extra_pairs"] if row["extra_pairs"] is not None else 0
+    status = row["billing_status"] or "active"
+    
+    # Only count extra if billing is active
+    allowed = max_p + extra if status == "active" else 0
+    
+    return {
+        "max_pairs_in_plan": max_p,
+        "extra_pairs": extra,
+        "billing_status": status,
+        "allowed_pairs": allowed,
+    }
+
+
+def set_user_quota(
+    user_id: str,
+    *,
+    max_pairs_in_plan: Optional[int] = None,
+    extra_pairs: Optional[int] = None,
+    billing_status: Optional[str] = None,
+) -> bool:
+    """Update user quota fields. Only non-None values are updated."""
+    init_db()
+    updates = []
+    params = []
+    if max_pairs_in_plan is not None:
+        updates.append("max_pairs_in_plan=?")
+        params.append(max_pairs_in_plan)
+    if extra_pairs is not None:
+        updates.append("extra_pairs=?")
+        params.append(extra_pairs)
+    if billing_status is not None:
+        updates.append("billing_status=?")
+        params.append(billing_status)
+    
+    if not updates:
+        return True
+    
+    params.append(str(user_id))
+    sql = f"UPDATE users SET {', '.join(updates)} WHERE user_id=?"
+    
+    conn = _get_connection()
+    try:
+        conn.execute(sql, params)
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
 
 
 # Ensure DB is ready at import
