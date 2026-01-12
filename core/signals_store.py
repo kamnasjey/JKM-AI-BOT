@@ -15,7 +15,9 @@ DEFAULT_SIGNALS_PATH = REPO_DIR / "state" / "signals_v1.jsonl"
 DEFAULT_PUBLIC_SIGNALS_PATH = REPO_DIR / "state" / "signals.jsonl"
 
 
-def append_signal_jsonl(payload: SignalPayloadV1, path: Path = DEFAULT_SIGNALS_PATH) -> None:
+def append_signal_jsonl(payload: SignalPayloadV1, path: Optional[Path] = None) -> None:
+    if path is None:
+        path = DEFAULT_SIGNALS_PATH
     obj = payload.model_dump(mode="json")
     signal_id = str(obj.get("signal_id") or "").strip()
     if not signal_id:
@@ -26,12 +28,15 @@ def append_signal_jsonl(payload: SignalPayloadV1, path: Path = DEFAULT_SIGNALS_P
 
 def append_public_signal_jsonl(
     public_payload: SignalPayloadPublicV1 | Dict[str, Any],
-    path: Path = DEFAULT_PUBLIC_SIGNALS_PATH,
+    path: Optional[Path] = None,
 ) -> None:
     """Append public/UI signal payload to JSONL (atomic, NA-safe).
 
     This is additive and does not change legacy storage.
     """
+
+    if path is None:
+        path = DEFAULT_PUBLIC_SIGNALS_PATH
 
     if isinstance(public_payload, SignalPayloadPublicV1):
         obj: Dict[str, Any] = public_payload.model_dump(mode="json")
@@ -63,9 +68,11 @@ def list_signals_jsonl(
     user_id: str,
     limit: int = 50,
     symbol: Optional[str] = None,
-    path: Path = DEFAULT_SIGNALS_PATH,
+    path: Optional[Path] = None,
     include_all_users: bool = False,
 ) -> List[Dict[str, Any]]:
+    if path is None:
+        path = DEFAULT_SIGNALS_PATH
     limit = max(1, min(int(limit or 50), 500))
     sym = str(symbol).upper().strip() if symbol else None
 
@@ -100,7 +107,7 @@ def list_public_signals_jsonl(
     user_id: str,
     limit: int = 50,
     symbol: Optional[str] = None,
-    path: Path = DEFAULT_PUBLIC_SIGNALS_PATH,
+    path: Optional[Path] = None,
     include_all_users: bool = False,
 ) -> List[Dict[str, Any]]:
     """List public signals from JSONL.
@@ -115,7 +122,7 @@ def list_public_signals_jsonl(
         user_id=user_id,
         limit=limit,
         symbol=symbol,
-        path=path,
+        path=(path or DEFAULT_PUBLIC_SIGNALS_PATH),
         include_all_users=include_all_users,
     )
 
@@ -124,9 +131,11 @@ def get_signal_by_id_jsonl(
     *,
     user_id: str,
     signal_id: str,
-    path: Path = DEFAULT_SIGNALS_PATH,
+    path: Optional[Path] = None,
     include_all_users: bool = False,
 ) -> Optional[Dict[str, Any]]:
+    if path is None:
+        path = DEFAULT_SIGNALS_PATH
     target = str(signal_id).strip()
     if not target:
         return None
@@ -156,7 +165,7 @@ def get_public_signal_by_id_jsonl(
     *,
     user_id: str,
     signal_id: str,
-    path: Path = DEFAULT_PUBLIC_SIGNALS_PATH,
+    path: Optional[Path] = None,
     include_all_users: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Get one public signal by id from JSONL.
@@ -169,6 +178,6 @@ def get_public_signal_by_id_jsonl(
     return get_signal_by_id_jsonl(
         user_id=user_id,
         signal_id=signal_id,
-        path=path,
+        path=(path or DEFAULT_PUBLIC_SIGNALS_PATH),
         include_all_users=include_all_users,
     )

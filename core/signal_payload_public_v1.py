@@ -36,11 +36,11 @@ class SignalPayloadPublicV1(BaseModel):
     signal_id: str
     created_at: int
 
-    user_id: str
+    user_id: str = "default"
     symbol: str
     tf: str
 
-    status: Literal["OK", "NONE"]
+    status: Literal["OK", "NONE"] = "OK"
     direction: Literal["BUY", "SELL", "NA"]
 
     entry: Optional[float] = None
@@ -54,6 +54,13 @@ class SignalPayloadPublicV1(BaseModel):
     evidence: Dict[str, Any] = Field(default_factory=dict)
 
     chart_drawings: List[DrawingObjectPublicV1] = Field(default_factory=list)
+
+    # Forward compatibility: keep a stable placeholder for legacy fields.
+    # Some clients/tests expect this key to always exist.
+    legacy: Optional[Dict[str, Any]] = None
+
+    # Public payload includes engine annotations for UI overlays/history consumers.
+    engine_annotations: EngineAnnotationsV1 = Field(default_factory=EngineAnnotationsV1)
 
     # Backward/forward compatibility: expose canonical field names expected by UI.
     @computed_field(return_type=int)
@@ -268,6 +275,8 @@ def to_public_v1(payload: SignalPayloadV1) -> SignalPayloadPublicV1:
         explain=explain,
         evidence=evidence,
         chart_drawings=drawings,
+        legacy=None,
+        engine_annotations=payload.engine_annotations,
     )
 
 
@@ -353,4 +362,5 @@ def to_public_v1_from_legacy_dict(legacy: Dict[str, Any]) -> SignalPayloadPublic
         explain=explain,
         evidence=evidence,
         chart_drawings=list(drawings),
+        legacy=dict(legacy),
     )

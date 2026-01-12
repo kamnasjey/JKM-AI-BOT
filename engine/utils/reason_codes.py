@@ -30,8 +30,11 @@ _ALIAS_TO_STABLE = {
     "NO_SIGNALS_FROM_DETECTORS": "NO_HITS",
     "NO_HITS": "NO_HITS",
     "NO_DETECTORS_FOR_REGIME": "NO_DETECTORS_FOR_REGIME",
+    "NO_ENABLED_DETECTORS": "NO_DETECTORS_FOR_REGIME",
     "TREND_FLAT": "NO_HITS",
     "TREND_UNCLEAR": "NO_HITS",
+    "NO_SWING": "NO_HITS",
+    "FIBO_FAIL": "NO_HITS",
 
     # Score/quality gates
     "low_score": "SCORE_BELOW_MIN",
@@ -39,6 +42,7 @@ _ALIAS_TO_STABLE = {
     "conflict": "CONFLICT_SCORE",
     "CONFLICT_SCORE": "CONFLICT_SCORE",
     "RR_BELOW_MIN": "RR_BELOW_MIN",
+    "ALL_SIGNALS_FILTERED_BY_RR": "RR_BELOW_MIN",
 
     # Validation
     "PROFILE_INVALID": "PROFILE_INVALID",
@@ -47,6 +51,7 @@ _ALIAS_TO_STABLE = {
     # Generic fallbacks / non-stable internal reasons
     "data_gap": "UNKNOWN_ERROR",
     "no_m5": "UNKNOWN_ERROR",
+    "DETECTOR_ERROR": "UNKNOWN_ERROR",
 }
 
 
@@ -86,6 +91,14 @@ def normalize_pair_none_reason(reasons: Optional[List[str]]) -> str:
         # Normalize "Trend data insufficient: X < Y" => NO_HITS
         if s.startswith("Trend data insufficient"):
             s = "NO_HITS"
+
+        # Normalize FIBO_FAIL* => NO_HITS
+        if s.startswith("FIBO_FAIL"):
+            s = "NO_HITS"
+
+        # Normalize DETECTOR_ERROR|* => UNKNOWN_ERROR
+        if s.startswith("DETECTOR_ERROR"):
+            s = "UNKNOWN_ERROR"
 
         mapped.append(_ALIAS_TO_STABLE.get(s, s))
 
