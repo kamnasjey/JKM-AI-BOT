@@ -52,7 +52,10 @@ class SignalPayloadV1(BaseModel):
     schema_version: int = 1
 
     signal_id: str
-    created_at: int
+    created_at: int = Field(default_factory=lambda: int(time.time()))
+
+    # Legacy/compat field (older code/tests may pass ISO timestamp string)
+    timestamp: Optional[str] = None
 
     user_id: str
     symbol: str

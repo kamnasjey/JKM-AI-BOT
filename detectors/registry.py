@@ -84,7 +84,7 @@ def get_enabled_detectors(
     # If no detector config provided, use defaults
     if not detector_configs:
         for name in default_enabled:
-            detector = get_detector(name, DetectorConfig(enabled=True))
+            detector = get_detector(name, DetectorConfig(enabled=True), wrap_safe=True)
             if detector:
                 enabled[name] = detector
         return enabled
@@ -101,7 +101,7 @@ def get_enabled_detectors(
         
         params = cfg.get("params", {})
         detector_config = DetectorConfig(enabled=True, params=params)
-        detector = get_detector(name, detector_config)
+        detector = get_detector(name, detector_config, wrap_safe=True)
         
         if detector:
             enabled[name] = detector
@@ -164,14 +164,28 @@ class SafeDetectorWrapper(BaseDetector):
         return self.inner.get_examples()
 
 
-def get_detector(name: str, config: Optional[DetectorConfig] = None) -> Optional[BaseDetector]:
-    """
-    Get detector instance by name, wrapped for safety.
+def _maybe_wrap_safe(det: BaseDetector, *, wrap_safe: bool) -> BaseDetector:
+    if not wrap_safe:
+        return det
+    return SafeDetectorWrapper(det)
+
+
+def get_detector(
+    name: str,
+    config: Optional[DetectorConfig] = None,
+    *,
+    wrap_safe: bool = False,
+) -> Optional[BaseDetector]:
+    """Get detector instance by name.
+
+    Notes:
+    - Default returns the raw detector instance (tests rely on this).
+    - When wrap_safe=True, returns a SafeDetectorWrapper around the instance.
     """
     detector_class = DETECTOR_REGISTRY.get(name)
     if detector_class is None:
         return None
-    
+
     instance = detector_class(config=config)
-    return SafeDetectorWrapper(instance)
+    return _maybe_wrap_safe(instance, wrap_safe=wrap_safe)
 
