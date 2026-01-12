@@ -642,6 +642,146 @@ def admin_backfill(payload: dict):
 
 
 # ============================================================================
+# BACKTEST API
+# ============================================================================
+
+@app.post("/api/backtest", dependencies=[Depends(require_internal_key)])
+def run_backtest(payload: dict = Body(...)):
+    """Run a simple backtest against historical signals.
+    
+    Body: {
+        "strategy_id": "my_strategy",  # optional: filter by strategy
+        "detectors": ["range_box_edge", "sr_bounce"],  # optional: filter signals that used these detectors
+        "symbol": "XAUUSD",  # optional: filter by symbol
+        "days": 30,  # optional: how many days back (default 30)
+    }
+    
+    Returns statistics about matched signals.
+    """
+    strategy_id = (payload.get("strategy_id") or "").strip() or None
+    detectors = payload.get("detectors") or []
+    symbol_filter = (payload.get("symbol") or "").strip().upper() or None
+    days = int(payload.get("days") or 30)
+    
+    path = _signals_path()
+    if not path.exists():
+        return {
+            "ok": True,
+            "total_matched": 0,
+            "ok_count": 0,
+            "none_count": 0,
+            "hit_rate": None,
+            "by_symbol": {},
+            "signals_sample": [],
+        }
+    
+    from collections import defaultdict
+    
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - (days * 86400)
+    
+    matched_signals = []
+    by_symbol: dict = defaultdict(lambda: {"ok": 0, "none": 0, "total": 0})
+    
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                
+                # Parse timestamp
+                ts = obj.get("ts") or obj.get("created_at")
+                sig_ts = 0
+                if isinstance(ts, (int, float)):
+                    sig_ts = int(ts)
+                elif isinstance(ts, str):
+                    try:
+                        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        sig_ts = int(dt.timestamp())
+                    except Exception:
+                        pass
+                
+                if sig_ts < cutoff_ts:
+                    continue
+                
+                # Symbol filter
+                sig_symbol = str(obj.get("symbol") or "").upper()
+                if symbol_filter and sig_symbol != symbol_filter:
+                    continue
+                
+                # Detector filter (check if signal used any of the specified detectors)
+                if detectors:
+                    sig_evidence = obj.get("evidence") or {}
+                    sig_detectors = sig_evidence.get("detectors_triggered") or []
+                    if isinstance(sig_detectors, dict):
+                        sig_detectors = list(sig_detectors.keys())
+                    if not any(d in sig_detectors for d in detectors):
+                        continue
+                
+                # Strategy filter (check explain or evidence for strategy_id)
+                if strategy_id:
+                    sig_strategy = obj.get("explain", {}).get("strategy_id") or obj.get("evidence", {}).get("strategy_id")
+                    if sig_strategy != strategy_id:
+                        continue
+                
+                status = str(obj.get("status") or "").upper()
+                
+                matched_signals.append({
+                    "signal_id": obj.get("signal_id"),
+                    "symbol": sig_symbol,
+                    "tf": obj.get("tf") or obj.get("timeframe"),
+                    "direction": obj.get("direction"),
+                    "status": status,
+                    "rr": obj.get("rr"),
+                    "created_at": sig_ts,
+                })
+                
+                by_symbol[sig_symbol]["total"] += 1
+                if status == "OK":
+                    by_symbol[sig_symbol]["ok"] += 1
+                elif status == "NONE":
+                    by_symbol[sig_symbol]["none"] += 1
+    except Exception:
+        pass
+    
+    total_matched = len(matched_signals)
+    ok_count = sum(1 for s in matched_signals if s.get("status") == "OK")
+    none_count = sum(1 for s in matched_signals if s.get("status") == "NONE")
+    
+    hit_rate = None
+    denom = ok_count + none_count
+    if denom > 0:
+        hit_rate = round(ok_count / denom, 4)
+    
+    # Add hit_rate to by_symbol
+    symbol_stats = {}
+    for sym, stats in by_symbol.items():
+        d = stats["ok"] + stats["none"]
+        hr = round(stats["ok"] / d, 4) if d > 0 else None
+        symbol_stats[sym] = {**stats, "hit_rate": hr}
+    
+    return {
+        "ok": True,
+        "total_matched": total_matched,
+        "ok_count": ok_count,
+        "none_count": none_count,
+        "hit_rate": hit_rate,
+        "by_symbol": symbol_stats,
+        "signals_sample": matched_signals[:20],  # Return first 20 as sample
+        "filters": {
+            "strategy_id": strategy_id,
+            "detectors": detectors,
+            "symbol": symbol_filter,
+            "days": days,
+        },
+    }
+
+
+# ============================================================================
 # USER STRATEGY & DETECTOR API ENDPOINTS
 # ============================================================================
 
