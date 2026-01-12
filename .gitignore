@@ -43,6 +43,9 @@ dist/
 frontend/dist/
 frontend/.vite/
 
+# Nested workspace clone (JKM-DASHBOARD)
+dashboard/
+
 # Build artifacts
 build/
 *.egg-info/

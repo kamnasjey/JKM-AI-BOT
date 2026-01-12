@@ -3,18 +3,24 @@ import { ChartBoard } from './components/ChartBoard';
 import { StatusWidget } from './components/StatusWidget';
 import { SignalDetail } from './pages/SignalDetail';
 import { SignalsList } from './pages/SignalsList';
+import { AdminPanel } from './pages/AdminPanel';
+import { PlansPage } from './pages/Plans';
 import { apiGetJson } from './lib/apiClient';
+import { buildAuthHeaders } from './lib/auth';
 import './App.css';
 
 function App() {
   const [symbols, setSymbols] = useState<string[]>([]);
   const [activeSymbol, setActiveSymbol] = useState<string>("EURUSD");
-  const [view, setView] = useState<'chart' | 'signals' | 'signal_detail'>('chart');
+  const [view, setView] = useState<'chart' | 'signals' | 'signal_detail' | 'plans' | 'admin'>('chart');
   const [activeSignalId, setActiveSignalId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   // const [activeTf, setActiveTf] = useState<string>("5m"); // Removed as per instruction
 
   useEffect(() => {
-    apiGetJson<string[]>('/api/markets/symbols')
+    const headers = buildAuthHeaders();
+
+    apiGetJson<string[]>('/api/markets/symbols', { headers })
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           setSymbols(data);
@@ -22,6 +28,14 @@ function App() {
         }
       })
       .catch(console.error);
+
+    apiGetJson<any>('/api/me', { headers })
+      .then((data) => {
+        setIsAdmin(Boolean(data?.user?.is_admin));
+      })
+      .catch(() => {
+        setIsAdmin(false);
+      });
   }, []);
 
   return (
@@ -41,6 +55,12 @@ function App() {
           onClick={() => setView('signals')}
         >
           Signals
+        </button>
+        <button
+          className={`px-3 py-1 rounded border ${view === 'plans' ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-gray-700 border-gray-600'}`}
+          onClick={() => setView('plans')}
+        >
+          Plans
         </button>
 
         {/* Symbol Selector */}
@@ -96,7 +116,30 @@ function App() {
             />
           </div>
         )}
+
+        {view === 'plans' && (
+          <div className="flex-1 overflow-auto">
+            <PlansPage />
+          </div>
+        )}
+
+        {view === 'admin' && (
+          <div className="flex-1 overflow-auto">
+            <AdminPanel onBack={() => setView('plans')} />
+          </div>
+        )}
       </main>
+
+      {isAdmin ? (
+        <button
+          type="button"
+          className="fixed bottom-4 right-4 px-4 py-2 rounded bg-gray-800 border border-gray-600 text-white hover:border-yellow-500"
+          onClick={() => setView('admin')}
+          title="Admin"
+        >
+          Admin
+        </button>
+      ) : null}
     </div>
   );
 }

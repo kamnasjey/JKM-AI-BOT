@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -36,6 +37,7 @@ from user_db import (
     delete_user,
     ensure_admin_account,
     get_account,
+    get_account_by_email,
     list_users,
     verify_email_token,
     verify_email_code,
@@ -174,6 +176,17 @@ class BillingCheckoutPayload(BaseModel):
     plan_id: str
     success_url: str
     cancel_url: str
+
+
+class ManualPaymentRequestPayload(BaseModel):
+    plan_id: str
+    payer_email: EmailStr
+
+
+class AdminGrantAccessPayload(BaseModel):
+    user_email: EmailStr
+    plan_id: str
+    note: Optional[str] = None
 
 
 class EngineLevel(BaseModel):
@@ -605,29 +618,121 @@ def api_billing_checkout(request: Request, payload: BillingCheckoutPayload) -> A
         updated = set_user_plan(user_id=user_id, plan_id="free")
         return {"ok": True, "plan_id": "free", "profile": updated}
 
-    stripe_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
-    price_pro = (os.getenv("STRIPE_PRICE_PRO") or "").strip()
-    price_pro_plus = (os.getenv("STRIPE_PRICE_PRO_PLUS") or "").strip()
-    price_id = price_pro if plan_id == "pro" else price_pro_plus
-    if not stripe_key or not price_id:
-        raise HTTPException(status_code=500, detail="Stripe billing not configured")
+    from services.billing_provider import get_billing_provider
 
-    from services.stripe_billing import create_checkout_session
+    provider = get_billing_provider()
+    if provider == "stripe":
+        stripe_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+        price_pro = (os.getenv("STRIPE_PRICE_PRO") or "").strip()
+        price_pro_plus = (os.getenv("STRIPE_PRICE_PRO_PLUS") or "").strip()
+        price_id = price_pro if plan_id == "pro" else price_pro_plus
+        if not stripe_key or not price_id:
+            raise HTTPException(status_code=500, detail="Stripe billing not configured")
 
-    session = create_checkout_session(
-        stripe_secret_key=stripe_key,
-        price_id=price_id,
-        success_url=str(payload.success_url),
-        cancel_url=str(payload.cancel_url),
-        customer_email=str(account.get("email") or "") or None,
-        client_reference_id=user_id,
-        metadata={
-            "user_id": user_id,
+        from services.stripe_billing import create_checkout_session
+
+        session = create_checkout_session(
+            stripe_secret_key=stripe_key,
+            price_id=price_id,
+            success_url=str(payload.success_url),
+            cancel_url=str(payload.cancel_url),
+            customer_email=str(account.get("email") or "") or None,
+            client_reference_id=user_id,
+            metadata={
+                "user_id": user_id,
+                "plan_id": plan_id,
+            },
+        )
+
+        return {
+            "ok": True,
             "plan_id": plan_id,
-        },
-    )
+            "provider": "stripe",
+            "checkout_url": session.get("url"),
+            "session_id": session.get("id"),
+        }
 
-    return {"ok": True, "plan_id": plan_id, "checkout_url": session.get("url"), "session_id": session.get("id")}
+    # For "manual" or "qpay" (until contract is finalized), return instructions.
+    instructions = (os.getenv("MANUAL_PAYMENT_INSTRUCTIONS") or "").strip()
+    if not instructions:
+        instructions = "Төлбөрөө дансаар шилжүүлээд, доорх имэйлээр мэдэгдэнэ үү. Админ баталгаажуулсны дараа access нээгдэнэ."
+
+    return {
+        "ok": True,
+        "plan_id": plan_id,
+        "provider": provider,
+        "mode": "manual",
+        "instructions": instructions,
+    }
+
+
+@app.post("/api/billing/manual-request")
+def api_billing_manual_request(request: Request, payload: ManualPaymentRequestPayload) -> Any:
+    """User requests access after bank transfer.
+
+    We store requested plan + payer email in the user's profile. Admin later grants plan.
+    """
+
+    account, _ = _require_account(request)
+    user_id = str(account.get("user_id"))
+
+    from core.plans import normalize_plan_id
+
+    plan_id = normalize_plan_id(payload.plan_id)
+    if plan_id == "free":
+        raise HTTPException(status_code=400, detail="manual-request not needed for free")
+
+    prof = get_profile(user_id)
+    if not isinstance(prof, dict):
+        prof = {}
+
+    prof["manual_payment_requested_plan"] = plan_id
+    prof["manual_payment_email"] = str(payload.payer_email).strip().lower()
+    prof["manual_payment_status"] = "pending"
+    prof["manual_payment_requested_at"] = datetime.now(timezone.utc).isoformat()
+
+    name = (
+        prof.get("name")
+        or (account.get("name") if isinstance(account, dict) else None)
+        or f"User {user_id}"
+    )
+    prof["name"] = name
+
+    add_user(user_id, str(name), prof)
+    return {"ok": True, "status": "pending", "requested_plan": plan_id}
+
+
+@app.post("/api/admin/grant-access")
+def api_admin_grant_access(request: Request, payload: AdminGrantAccessPayload) -> Any:
+    account, _ = _require_account(request)
+    if not account.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin required")
+
+    from core.plans import normalize_plan_id
+
+    plan_id = normalize_plan_id(payload.plan_id)
+
+    target = get_account_by_email(str(payload.user_email))
+    if not target or not target.get("user_id"):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target_user_id = str(target["user_id"])
+
+    from user_db import set_user_plan
+
+    updated = set_user_plan(user_id=target_user_id, plan_id=plan_id, plan_status="active")
+    if not isinstance(updated, dict):
+        updated = {"user_id": target_user_id, "plan": plan_id, "plan_status": "active"}
+
+    updated["manual_payment_status"] = "approved"
+    updated["manual_payment_approved_at"] = datetime.now(timezone.utc).isoformat()
+    updated["manual_payment_approved_by"] = str(account.get("user_id") or "")
+    if payload.note:
+        updated["manual_payment_note"] = str(payload.note)
+
+    add_user(target_user_id, str(updated.get("name") or target.get("name") or f"User {target_user_id}"), updated)
+
+    return {"ok": True, "user_id": target_user_id, "plan_id": plan_id, "profile": updated}
 
 
 @app.post("/api/billing/stripe/webhook")

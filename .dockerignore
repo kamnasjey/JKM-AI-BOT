@@ -1,0 +1,50 @@
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+ENV
+env
+
+# Runtime / data
+logs
+market_data
+data
+state
+*.db
+*.sqlite
+*.sqlite3
+
+# Nested repos / local clones
+/dashboard
+
+# Frontend artifacts (if any)
+frontend/node_modules
+frontend/dist
+frontend/.vite
+node_modules
+dist
+.next
+out
+
+# Secrets
+.env
+.env.*
+secrets.*
+credentials.*
+*.pem
+*.key
+*.p12
+*.jks
