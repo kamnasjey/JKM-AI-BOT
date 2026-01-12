@@ -390,6 +390,8 @@ class MassiveDataProvider(DataProvider):
                     # Normalization sorts ascending afterward.
                     "sort": "desc",
                     "limit": int(per_request_limit),
+                    # Polygon.io uses apiKey as query parameter
+                    "apiKey": self._key,
                 }
 
             last_err: Optional[Exception] = None
