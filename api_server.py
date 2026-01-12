@@ -1093,3 +1093,125 @@ def get_metrics():
         "last_24h_ok": last_24h_ok,
         "last_24h_total": last_24h_total,
     }
+
+
+@app.get("/api/metrics/detailed")
+def get_detailed_metrics():
+    """Return detailed performance metrics broken down by symbol, timeframe, and day."""
+    path = _signals_path()
+    
+    if not path.exists():
+        return {
+            "ok": True,
+            "total_signals": 0,
+            "by_symbol": {},
+            "by_timeframe": {},
+            "by_day": [],
+            "by_direction": {"BUY": {"ok": 0, "none": 0}, "SELL": {"ok": 0, "none": 0}},
+        }
+    
+    from collections import defaultdict
+    
+    total_signals = 0
+    by_symbol: dict = defaultdict(lambda: {"ok": 0, "none": 0, "total": 0})
+    by_tf: dict = defaultdict(lambda: {"ok": 0, "none": 0, "total": 0})
+    by_day: dict = defaultdict(lambda: {"ok": 0, "none": 0, "total": 0})
+    by_direction: dict = {"BUY": {"ok": 0, "none": 0}, "SELL": {"ok": 0, "none": 0}}
+    
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                
+                total_signals += 1
+                status = str(obj.get("status") or "").upper()
+                symbol = str(obj.get("symbol") or "UNKNOWN")
+                tf = str(obj.get("tf") or obj.get("timeframe") or "M5")
+                direction = str(obj.get("direction") or "NA").upper()
+                
+                # Parse timestamp for day grouping
+                ts = obj.get("ts") or obj.get("created_at")
+                day_str = "unknown"
+                if isinstance(ts, (int, float)):
+                    day_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+                elif isinstance(ts, str):
+                    try:
+                        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        day_str = dt.strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                
+                # By symbol
+                by_symbol[symbol]["total"] += 1
+                if status == "OK":
+                    by_symbol[symbol]["ok"] += 1
+                elif status == "NONE":
+                    by_symbol[symbol]["none"] += 1
+                
+                # By timeframe
+                by_tf[tf]["total"] += 1
+                if status == "OK":
+                    by_tf[tf]["ok"] += 1
+                elif status == "NONE":
+                    by_tf[tf]["none"] += 1
+                
+                # By day
+                by_day[day_str]["total"] += 1
+                if status == "OK":
+                    by_day[day_str]["ok"] += 1
+                elif status == "NONE":
+                    by_day[day_str]["none"] += 1
+                
+                # By direction
+                if direction in by_direction:
+                    if status == "OK":
+                        by_direction[direction]["ok"] += 1
+                    elif status == "NONE":
+                        by_direction[direction]["none"] += 1
+    except Exception:
+        pass
+    
+    # Convert by_day to sorted list for charting
+    day_list = []
+    for day, stats in sorted(by_day.items()):
+        if day == "unknown":
+            continue
+        hit_rate = None
+        denom = stats["ok"] + stats["none"]
+        if denom > 0:
+            hit_rate = round(stats["ok"] / denom, 4)
+        day_list.append({
+            "date": day,
+            "ok": stats["ok"],
+            "none": stats["none"],
+            "total": stats["total"],
+            "hit_rate": hit_rate,
+        })
+    
+    # Add hit_rate to by_symbol
+    symbol_stats = {}
+    for sym, stats in by_symbol.items():
+        denom = stats["ok"] + stats["none"]
+        hit_rate = round(stats["ok"] / denom, 4) if denom > 0 else None
+        symbol_stats[sym] = {**stats, "hit_rate": hit_rate}
+    
+    # Add hit_rate to by_tf
+    tf_stats = {}
+    for tf, stats in by_tf.items():
+        denom = stats["ok"] + stats["none"]
+        hit_rate = round(stats["ok"] / denom, 4) if denom > 0 else None
+        tf_stats[tf] = {**stats, "hit_rate": hit_rate}
+    
+    return {
+        "ok": True,
+        "total_signals": total_signals,
+        "by_symbol": symbol_stats,
+        "by_timeframe": tf_stats,
+        "by_day": day_list[-30:],  # Last 30 days
+        "by_direction": by_direction,
+    }
