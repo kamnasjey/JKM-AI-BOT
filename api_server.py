@@ -6,10 +6,11 @@ import time
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import asyncio
 
 APP_START = time.time()
 app = FastAPI(title="JKM-AI-BOT API", version="0.1.0")
@@ -1355,3 +1356,112 @@ def get_detailed_metrics():
         "by_day": day_list[-30:],  # Last 30 days
         "by_direction": by_direction,
     }
+
+
+# =========================
+# WebSocket Signals Real-time Endpoint
+# =========================
+class SignalsBroadcaster:
+    """Manages WebSocket connections and broadcasts new signals."""
+    
+    def __init__(self):
+        self._connections: set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        async with self._lock:
+            self._connections.add(websocket)
+    
+    async def disconnect(self, websocket: WebSocket):
+        async with self._lock:
+            self._connections.discard(websocket)
+    
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients."""
+        async with self._lock:
+            dead = set()
+            for ws in self._connections:
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    dead.add(ws)
+            self._connections -= dead
+    
+    @property
+    def connection_count(self) -> int:
+        return len(self._connections)
+
+
+signals_broadcaster = SignalsBroadcaster()
+
+
+@app.websocket("/ws/signals")
+async def ws_signals(websocket: WebSocket):
+    """WebSocket endpoint for real-time signal updates.
+    
+    Clients connect and receive:
+    - Initial batch of recent signals
+    - New signals as they are generated
+    - Heartbeat pings every 30 seconds
+    """
+    await signals_broadcaster.connect(websocket)
+    
+    try:
+        # Send recent signals on connect
+        from signals_tracker import _load_signals
+        try:
+            all_signals = _load_signals()
+            recent = all_signals[-50:] if len(all_signals) > 50 else all_signals
+            await websocket.send_json({
+                "type": "initial",
+                "signals": recent,
+                "total": len(all_signals),
+            })
+        except Exception:
+            await websocket.send_json({"type": "initial", "signals": [], "total": 0})
+        
+        # Keep connection alive with heartbeat + listen for client messages
+        last_count = len(all_signals) if 'all_signals' in dir() else 0
+        
+        while True:
+            # Check for new signals every 5 seconds
+            await asyncio.sleep(5)
+            
+            try:
+                current_signals = _load_signals()
+                current_count = len(current_signals)
+                
+                if current_count > last_count:
+                    # New signals detected - send them
+                    new_signals = current_signals[last_count:]
+                    await websocket.send_json({
+                        "type": "new_signals",
+                        "signals": new_signals,
+                        "total": current_count,
+                    })
+                    last_count = current_count
+                
+                # Send heartbeat every iteration
+                await websocket.send_json({"type": "heartbeat", "ts": int(time.time())})
+                
+            except Exception:
+                # If signal loading fails, just continue
+                await websocket.send_json({"type": "heartbeat", "ts": int(time.time())})
+                
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        await signals_broadcaster.disconnect(websocket)
+
+
+@app.get("/api/ws/status")
+def get_ws_status():
+    """Get WebSocket connection status."""
+    return {
+        "ok": True,
+        "active_connections": signals_broadcaster.connection_count,
+    }
+
