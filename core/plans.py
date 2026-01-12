@@ -15,7 +15,7 @@ class PlanSpec:
 
 
 PLANS: dict[PlanId, PlanSpec] = {
-    "free": PlanSpec(plan_id="free", label="Free", max_pairs=3),
+    "free": PlanSpec(plan_id="free", label="Free", max_pairs=2),
     "pro": PlanSpec(plan_id="pro", label="Pro", max_pairs=5),
     "pro_plus": PlanSpec(plan_id="pro_plus", label="Pro+", max_pairs=15),
 }

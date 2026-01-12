@@ -25,20 +25,19 @@ def test_effective_plan_id_inactive() -> None:
 
 
 def test_effective_max_pairs_defaults() -> None:
-    assert effective_max_pairs(None) == 3
-    assert effective_max_pairs({}) == 3
+    assert effective_max_pairs(None) == 2
+    assert effective_max_pairs({}) == 2
 
 
 def test_pairs_validation_and_clamp() -> None:
-    ok, _ = validate_pairs(["EURUSD", "XAUUSD"], 3)
+    ok, _ = validate_pairs(["EURUSD", "XAUUSD"], 2)
     assert ok
 
-    ok, msg = validate_pairs(["EURUSD", "XAUUSD", "BTCUSD", "USDJPY"], 3)
+    ok, msg = validate_pairs(["EURUSD", "XAUUSD", "BTCUSD", "USDJPY"], 2)
     assert not ok
-    assert "max 3" in msg
+    assert "max 2" in msg
 
-    assert clamp_pairs(["eurusd", "xauusd", "btcusd", "usdjpy"], 3) == [
+    assert clamp_pairs(["eurusd", "xauusd", "btcusd", "usdjpy"], 2) == [
         "EURUSD",
         "XAUUSD",
-        "BTCUSD",
     ]

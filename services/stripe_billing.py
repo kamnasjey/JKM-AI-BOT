@@ -44,6 +44,9 @@ def create_checkout_session(
     for k, v in (metadata or {}).items():
         if k and v is not None:
             data[f"metadata[{k}]"] = str(v)
+            # Also attach to the underlying subscription so we can handle
+            # customer.subscription.* webhooks without a DB lookup.
+            data[f"subscription_data[metadata][{k}]"] = str(v)
 
     headers = {
         "Authorization": f"Bearer {stripe_secret_key}",

@@ -44,6 +44,7 @@ from user_profile import DEFAULT_PROFILE, get_profile
 from scanner_service import scanner_service
 
 from core.ops import build_health_snapshot, log_startup_banner
+from engine.utils.logging_utils import log_kv
 from core.signal_payload_public_v1 import to_public_v1, to_public_v1_from_legacy_dict
 from core.signal_payload_v1 import SignalPayloadV1
 from core.signals_store import get_signal_by_id_jsonl, list_signals_jsonl
@@ -666,6 +667,27 @@ async def api_billing_stripe_webhook(request: Request) -> Any:
                     plan_status="active",
                     stripe_customer_id=str(obj.get("customer") or "") or None,
                     stripe_subscription_id=str(obj.get("subscription") or "") or None,
+                )
+
+    # Auto-downgrade on cancel (requires subscription metadata set at checkout).
+    if event_type in {"customer.subscription.deleted", "customer.subscription.updated"}:
+        obj = (((event.get("data") or {}).get("object")) or {})
+        if isinstance(obj, dict):
+            meta = obj.get("metadata") or {}
+            user_id = str(meta.get("user_id") or "").strip()
+
+            status = str(obj.get("status") or "").strip().lower()
+            is_active = status in {"active", "trialing"}
+
+            if user_id and not is_active:
+                from user_db import set_user_plan
+
+                set_user_plan(
+                    user_id=user_id,
+                    plan_id="free",
+                    plan_status="canceled",
+                    stripe_customer_id=str(obj.get("customer") or "") or None,
+                    stripe_subscription_id=str(obj.get("id") or "") or None,
                 )
 
     # Always return 200 to Stripe.
