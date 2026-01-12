@@ -124,9 +124,14 @@ class DataIngestor:
 
             # When doing incremental fetches, request a small lookback window so we can
             # retrieve ~N recent candles (helps with provider delays/gaps/dup-dedupe).
+            # For warmup (last_ts=None), set since_fetch to fetch enough historical data.
             since_fetch = last_ts
             if last_ts is not None:
                 since_fetch = last_ts - timedelta(minutes=5 * int(limit) * 3)
+            else:
+                # Warmup: fetch from N bars ago to enable pagination in provider
+                # M5 = 5 min, so N bars = N*5 minutes. Add 50% buffer for weekend gaps.
+                since_fetch = datetime.now(timezone.utc) - timedelta(minutes=5 * int(limit) * 2)
 
             provider_name = str(getattr(self.provider, "name", "unknown")).upper()
             if hasattr(self.provider, "fetch_candles"):
