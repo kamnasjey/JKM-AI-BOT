@@ -5,9 +5,11 @@ import socket
 import time
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, Query
+from datetime import datetime, timezone
+from fastapi import FastAPI, Query, Request
 from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 APP_START = time.time()
 app = FastAPI(title="JKM-AI-BOT API", version="0.1.0")
@@ -192,9 +194,19 @@ def health():
     }
 
 @app.get("/api/signals")
-def list_signals(limit: int = Query(50, ge=1, le=500)):
+def list_signals(
+    limit: int = Query(50, ge=1, le=500),
+    symbol: str | None = Query(None, description="Filter by symbol (case-insensitive)"),
+):
+    """List signals with optional symbol filter. Newest first."""
     path = _signals_path()
-    return _read_last_json_objects(path, limit)
+    all_signals = _read_last_json_objects(path, limit * 3 if symbol else limit)  # over-fetch if filtering
+    
+    if symbol:
+        sym_upper = symbol.strip().upper()
+        filtered = [s for s in all_signals if str(s.get("symbol") or "").upper() == sym_upper]
+        return filtered[:limit]
+    return all_signals[:limit]
 
 
 @app.post("/api/signals")
@@ -321,7 +333,54 @@ _engine = EngineController()
 
 @app.get("/api/engine/status", dependencies=[Depends(require_internal_key)])
 def engine_status():
-    return _engine.status()
+    """Return real scanner status (not EngineController's misleading state)."""
+    import scanner_service as ss
+    import config as cfg
+
+    # Truth source: real scanner thread state
+    thread = getattr(ss.scanner_service, "_thread", None)
+    stop_event = getattr(ss.scanner_service, "_stop_event", None)
+    running = bool(thread and thread.is_alive() and (stop_event is None or not stop_event.is_set()))
+
+    # Last scan info from scanner
+    last_info = ss.scanner_service.get_last_scan_info()
+    last_scan_id = last_info.get("last_scan_id")
+    last_scan_ts_raw = last_info.get("last_scan_ts")
+
+    # Convert to epoch int
+    last_scan_ts: int = 0
+    if last_scan_ts_raw and last_scan_ts_raw != "NA":
+        try:
+            if isinstance(last_scan_ts_raw, (int, float)):
+                last_scan_ts = int(last_scan_ts_raw)
+            elif isinstance(last_scan_ts_raw, str):
+                # Try ISO parse
+                dt = datetime.fromisoformat(last_scan_ts_raw.replace("Z", "+00:00"))
+                last_scan_ts = int(dt.timestamp())
+        except Exception:
+            last_scan_ts = 0
+
+    if last_scan_id == "NA":
+        last_scan_id = None
+
+    # Cadence from config (best-effort)
+    cadence_sec: int | None = None
+    try:
+        cadence_sec = int(getattr(cfg, "SCAN_INTERVAL_SECONDS", 300) or 300)
+    except Exception:
+        cadence_sec = 300
+
+    # Last error (best-effort from EngineController fallback)
+    last_error = _engine.last_error
+
+    return {
+        "ok": True,
+        "running": running,
+        "last_scan_ts": last_scan_ts,
+        "last_scan_id": last_scan_id,
+        "cadence_sec": cadence_sec,
+        "last_error": last_error,
+    }
 
 @app.post("/api/engine/start", dependencies=[Depends(require_internal_key)])
 def engine_start():
@@ -333,7 +392,13 @@ def engine_stop():
 
 @app.post("/api/engine/manual-scan", dependencies=[Depends(require_internal_key)])
 def engine_manual_scan():
-    return _engine.manual_scan()
+    """Trigger a real scan cycle via scanner_service.scan_once()."""
+    import scanner_service as ss
+    try:
+        result = ss.scan_once(timeout_s=30)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 @app.post("/api/scan/manual-explain", dependencies=[Depends(require_internal_key)])
@@ -736,3 +801,201 @@ def telegram_toggle(user_id: str, payload: dict):
     
     return {"ok": success, "user_id": user_id, "enabled": enabled}
 
+
+# =========================
+# Signal Detail Endpoint
+# =========================
+
+
+@app.get("/api/signals/{signal_id}")
+def get_signal_detail(
+    signal_id: str,
+    user_id: str | None = Query(None, description="Optional user_id filter"),
+):
+    """Get a single signal by ID from signals.jsonl.
+    
+    Returns 404 if not found.
+    """
+    from core.signals_store import get_public_signal_by_id_jsonl
+    
+    uid = user_id.strip() if user_id else "system"
+    include_all = not bool(user_id)
+    
+    result = get_public_signal_by_id_jsonl(
+        user_id=uid,
+        signal_id=signal_id,
+        include_all_users=include_all,
+    )
+    
+    if result is None:
+        return JSONResponse(status_code=404, content={"ok": False, "message": "not_found"})
+    
+    return {"ok": True, "signal": result}
+
+
+# =========================
+# Symbols Endpoint
+# =========================
+
+
+@app.get("/api/symbols")
+def get_symbols():
+    """Return the union watchlist (all tradeable symbols)."""
+    try:
+        from watchlist_union import get_union_watchlist
+        symbols = get_union_watchlist()
+        if symbols:
+            return {"ok": True, "symbols": symbols, "count": len(symbols)}
+    except Exception:
+        pass
+    
+    # Fallback: try market_cache
+    try:
+        from market_data_cache import market_cache
+        symbols = market_cache.get_all_symbols()
+        return {"ok": True, "symbols": list(symbols), "count": len(symbols)}
+    except Exception:
+        pass
+    
+    return {"ok": True, "symbols": [], "count": 0}
+
+
+# =========================
+# Candles Endpoint for Charts
+# =========================
+
+
+@app.get("/api/markets/{symbol}/candles")
+def get_candles(
+    symbol: str,
+    tf: str = Query("M5", description="Timeframe: M5, M15, H1, H4, D1"),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """Return candles for chart rendering.
+    
+    Returns list of {time: epoch_sec, open, high, low, close}.
+    """
+    from market_data_cache import market_cache
+    
+    sym = symbol.strip().upper()
+    timeframe = tf.strip().upper()
+    
+    try:
+        raw_candles = market_cache.get_resampled(sym, timeframe)
+    except Exception:
+        raw_candles = []
+    
+    if not raw_candles:
+        return {"ok": True, "symbol": sym, "tf": timeframe, "candles": [], "count": 0}
+    
+    # Convert to output format with epoch time
+    out = []
+    for c in raw_candles[-limit:]:
+        t = c.get("time")
+        epoch: int = 0
+        if isinstance(t, datetime):
+            epoch = int(t.timestamp())
+        elif isinstance(t, (int, float)):
+            epoch = int(t)
+        elif isinstance(t, str):
+            try:
+                dt = datetime.fromisoformat(t.replace("Z", "+00:00"))
+                epoch = int(dt.timestamp())
+            except Exception:
+                continue
+        
+        try:
+            out.append({
+                "time": epoch,
+                "open": float(c.get("open", 0)),
+                "high": float(c.get("high", 0)),
+                "low": float(c.get("low", 0)),
+                "close": float(c.get("close", 0)),
+            })
+        except Exception:
+            continue
+    
+    return {"ok": True, "symbol": sym, "tf": timeframe, "candles": out, "count": len(out)}
+
+
+# =========================
+# Metrics Endpoint
+# =========================
+
+
+@app.get("/api/metrics")
+def get_metrics():
+    """Return simple signal metrics for dashboard cards."""
+    path = _signals_path()
+    
+    if not path.exists():
+        return {
+            "ok": True,
+            "total_signals": 0,
+            "ok_count": 0,
+            "none_count": 0,
+            "hit_rate": None,
+            "last_24h_ok": 0,
+            "last_24h_total": 0,
+        }
+    
+    total_signals = 0
+    ok_count = 0
+    none_count = 0
+    last_24h_ok = 0
+    last_24h_total = 0
+    
+    now_ts = int(time.time())
+    cutoff_24h = now_ts - 86400
+    
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                
+                total_signals += 1
+                status = str(obj.get("status") or "").upper()
+                
+                if status == "OK":
+                    ok_count += 1
+                elif status == "NONE":
+                    none_count += 1
+                
+                # Check timestamp for 24h window
+                ts = obj.get("ts") or obj.get("created_at")
+                sig_ts = 0
+                if isinstance(ts, (int, float)):
+                    sig_ts = int(ts)
+                elif isinstance(ts, str):
+                    try:
+                        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        sig_ts = int(dt.timestamp())
+                    except Exception:
+                        pass
+                
+                if sig_ts >= cutoff_24h:
+                    last_24h_total += 1
+                    if status == "OK":
+                        last_24h_ok += 1
+    except Exception:
+        pass
+    
+    hit_rate = None
+    denom = ok_count + none_count
+    if denom > 0:
+        hit_rate = round(ok_count / denom, 4)
+    
+    return {
+        "ok": True,
+        "total_signals": total_signals,
+        "ok_count": ok_count,
+        "none_count": none_count,
+        "hit_rate": hit_rate,
+        "last_24h_ok": last_24h_ok,
+        "last_24h_total": last_24h_total,
+    }

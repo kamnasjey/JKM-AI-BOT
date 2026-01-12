@@ -80,7 +80,7 @@ Run these commands on the server to verify a successful deployment:
 2.  **Verify Health Endpoint**:
     ```bash
     curl http://localhost:8000/health
-    # Expected: {"status":"ok", ...}
+    # Expected: {"ok":true, "uptime_s":..., ...}
     ```
 
 3.  **Verify API & Signals**:
@@ -98,6 +98,47 @@ Run these commands on the server to verify a successful deployment:
     touch state/_write_test && echo OK > state/_write_test && cat state/_write_test
     rm state/_write_test
     ```
+
+## New API Endpoints (v0.2)
+
+All internal endpoints require header: `x-internal-api-key: <YOUR_INTERNAL_API_KEY>`
+
+### Engine Status (Truth Source)
+```bash
+curl -H "x-internal-api-key: $INTERNAL_API_KEY" http://localhost:8000/api/engine/status
+# Returns: {"ok":true,"running":true,"last_scan_ts":1736684400,"last_scan_id":"scan_abc123","cadence_sec":300,"last_error":null}
+```
+
+### Manual Scan Trigger
+```bash
+curl -X POST -H "x-internal-api-key: $INTERNAL_API_KEY" http://localhost:8000/api/engine/manual-scan
+# Returns: {"ok":true,"result":{"ok":true,"triggered":true,"last_scan_id":"scan_xyz","last_scan_ts":"..."}}
+```
+
+### Signal Detail
+```bash
+curl "http://localhost:8000/api/signals/abc123-signal-id"
+# Returns: {"ok":true,"signal":{...}} or 404 {"ok":false,"message":"not_found"}
+```
+
+### Symbols (Watchlist)
+```bash
+curl http://localhost:8000/api/symbols
+# Returns: {"ok":true,"symbols":["EURUSD","XAUUSD",...],"count":15}
+```
+
+### Candles for Charts
+```bash
+curl "http://localhost:8000/api/markets/XAUUSD/candles?tf=M5&limit=200"
+# Returns: {"ok":true,"symbol":"XAUUSD","tf":"M5","candles":[{"time":1736684400,"open":2650.5,"high":2651.0,"low":2649.8,"close":2650.2},...],"count":200}
+```
+
+### Metrics Summary
+```bash
+curl http://localhost:8000/api/metrics
+# Returns: {"ok":true,"total_signals":1234,"ok_count":456,"none_count":778,"hit_rate":0.3693,"last_24h_ok":12,"last_24h_total":45}
+```
+
 
 5.  **Check Application Logs**:
     ```bash
