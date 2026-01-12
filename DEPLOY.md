@@ -117,6 +117,13 @@ OWNER_ADMIN_USER_ID=<your_admin_user_id>
 On startup, if that user has no saved strategies yet, the backend will seed the owner strategy
 (`strategy_id: jkm_strategy`, `name: JKM strategy`) into the per-user strategies store.
 
+To find the correct backend `user_id` for an owner email:
+
+```bash
+curl -H "x-internal-api-key: $INTERNAL_API_KEY" \
+    "http://localhost:8000/api/admin/resolve-user?email=Kamnasjey%40gmail.com"
+```
+
 ### Engine Status (Truth Source)
 ```bash
 curl -H "x-internal-api-key: $INTERNAL_API_KEY" http://localhost:8000/api/engine/status

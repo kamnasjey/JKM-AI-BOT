@@ -301,6 +301,30 @@ def require_internal_key(
         raise HTTPException(status_code=401, detail="unauthorized")
     return True
 
+
+@app.get("/api/admin/resolve-user", dependencies=[Depends(require_internal_key)])
+def admin_resolve_user(email: str = Query(..., description="User email to resolve to backend user_id")):
+    """Resolve backend user_id by email.
+
+    This is useful for ops (e.g., setting OWNER_ADMIN_USER_ID).
+    Never crashes if DB is missing; returns ok:true with found=false.
+    """
+
+    em = str(email or "").strip()
+    if not em:
+        raise HTTPException(status_code=400, detail="email required")
+
+    try:
+        from user_db import init_db, get_account_by_email
+
+        init_db()
+        acc = get_account_by_email(em)
+        if not acc:
+            return {"ok": True, "found": False, "email": em, "user_id": None}
+        return {"ok": True, "found": True, "email": em, "user_id": acc.get("user_id")}
+    except Exception:
+        return {"ok": True, "found": False, "email": em, "user_id": None}
+
 class EngineController:
     def __init__(self) -> None:
         self._lock = threading.Lock()
