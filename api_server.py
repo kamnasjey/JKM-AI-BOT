@@ -61,6 +61,26 @@ def _startup_scanner():
         if not owner_user_id:
             return
 
+        # Convenience: allow passing an email instead of a raw user_id.
+        # This resolves to the backend's user_id stored in sqlite.
+        if "@" in owner_user_id:
+            try:
+                from user_db import init_db, get_account_by_email
+
+                init_db()
+                acc = get_account_by_email(owner_user_id)
+                resolved = str((acc or {}).get("user_id") or "").strip()
+                if resolved:
+                    owner_user_id = resolved
+                else:
+                    _log.warning(
+                        "OWNER_ADMIN_USER_ID looks like email but was not found in backend user_db: %s",
+                        owner_user_id,
+                    )
+                    return
+            except Exception:
+                return
+
         try:
             from core.user_strategies_store import load_user_strategies, save_user_strategies
 

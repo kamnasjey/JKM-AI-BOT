@@ -108,11 +108,16 @@ All internal endpoints require header: `x-internal-api-key: <YOUR_INTERNAL_API_K
 By default, the backend requires users to explicitly configure a strategy before scanning.
 
 If you want the owner/admin account to have the previously-default working strategy preloaded,
-set this env var in your Docker Compose:
+set this env var in your backend Docker Compose:
 
 ```bash
-OWNER_ADMIN_USER_ID=<your_admin_user_id>
+OWNER_ADMIN_USER_ID=<backend_user_id_or_email>
 ```
+
+Notes:
+- Preferred: set `OWNER_ADMIN_USER_ID` to the backend `user_id` (opaque id).
+- Convenience: you may also set it to an email (e.g. `Kamnasjey@gmail.com`) *if that email exists*
+    in the backend sqlite user DB.
 
 On startup, if that user has no saved strategies yet, the backend will seed the owner strategy
 (`strategy_id: jkm_strategy`, `name: JKM strategy`) into the per-user strategies store.
