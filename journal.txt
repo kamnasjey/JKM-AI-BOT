@@ -776,3 +776,49 @@ EVIDENCE_LOGS (last 30 lines):
 2026-01-12 13:00:55,477 [INFO] ScannerService: PAIR_NONE | ms_total=4.89 | reason=NO_HITS | scan_id=1768194055415-de45 | strategy_id=default_f9198d | symbol=AUDUSD
 2026-01-12 13:00:55,509 [INFO] ScannerService: PAIR_NONE | ms_total=5.76 | reason=NO_HITS | scan_id=1768194055415-de45 | strategy_id=default_f9198d | symbol=BTCUSD
 2026-01-12 13:00:55,558 [INFO] ScannerService: PAIR_OK | blocked_reason=null | blocked_winner_strategy_id=null | candidates=null | candidates_top=null | detector=soft_combine | detectors=null | direction=SELL | failover_used=false | final_strategy=soft_combine | hh=null | hits=null | hl=null | lh=null | ll=null | min_score=null | ms_total=5.27 | params_digest=null | regime=null | regime_evidence=null | rr=3.00 | scan_id=1768194055415-de45 | score=null | strategy_id=default_f9198d | symbol=EURAUD | tf=M15 | top_hits=null | winner_strategy_id=default_f9198d
+
+===== 2026-01-12T05:31:03Z (AUTOPILOT SMOKE) =====
+RESULT: PASS
+FAIL_REASON: none
+NOW:
+  - health_ok=true
+  - engine_running=true
+  - scan_ok=true
+  - rowcounts: EURUSD=70692 XAUUSD=69107 BTCUSD=89988 
+NEXT:
+  - Monitor next cycle; Phase C if not done.
+EVIDENCE_ENV:
+DATA_PROVIDER=massive
+MASSIVE_API_KEY=PRESENT
+INTERNAL_API_KEY=PRESENT
+EVIDENCE_LOGS (last 30 lines):
+2026-01-12 13:26:06,192 [INFO] ScannerService: PAIR_NONE | ms_total=5.16 | reason=NO_HITS | scan_id=1768195564387-4f65 | strategy_id=default_f9198d | symbol=GBPJPY
+2026-01-12 13:26:06,253 [INFO] ScannerService: PAIR_NONE | ms_total=5.23 | reason=NO_HITS | scan_id=1768195564387-4f65 | strategy_id=default_f9198d | symbol=GBPUSD
+2026-01-12 13:26:06,315 [INFO] ScannerService: PAIR_NONE | ms_total=6.34 | reason=NO_HITS | scan_id=1768195564387-4f65 | strategy_id=default_f9198d | symbol=NZDUSD
+2026-01-12 13:26:06,400 [INFO] ScannerService: PAIR_OK | blocked_reason=null | blocked_winner_strategy_id=null | candidates=null | candidates_top=null | detector=soft_combine | detectors=null | direction=BUY | failover_used=false | final_strategy=soft_combine | hh=null | hits=null | hl=null | lh=null | ll=null | min_score=null | ms_total=5.56 | params_digest=null | regime=null | regime_evidence=null | rr=3.00 | scan_id=1768195564387-4f65 | score=null | strategy_id=default_f9198d | symbol=USDCAD | tf=M15 | top_hits=null | winner_strategy_id=default_f9198d
+2026-01-12 13:26:07,354 [INFO] ScannerService: PAIR_NONE | ms_total=4.95 | reason=NO_HITS | scan_id=1768195564387-4f65 | strategy_id=default_f9198d | symbol=USDCHF
+2026-01-12 13:26:07,429 [INFO] ScannerService: PAIR_NONE | ms_total=5.16 | reason=NO_HITS | scan_id=1768195564387-4f65 | strategy_id=default_f9198d | symbol=USDJPY
+2026-01-12 13:26:07,467 [INFO] ScannerService: PAIR_NONE | ms_total=6.98 | reason=NO_HITS | scan_id=1768195564387-4f65 | strategy_id=default_f9198d | symbol=XAUUSD
+2026-01-12 13:26:07,468 [INFO] ScannerService: SCAN_END | scan_id=1768195564387-4f65 | signals=0 | total_ms=3081
+2026-01-12 13:31:04,389 [INFO] ScannerService: SCAN_START | pairs=15 | scan_id=1768195864388-1d4a | strategies_count=1 | ts=2026-01-12T13:31:04.388312 | users=1
+2026-01-12 13:31:04,453 [INFO] ScannerService: PAIR_NONE | ms_total=5.06 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=AUDJPY
+2026-01-12 13:31:04,527 [INFO] ScannerService: PAIR_NONE | ms_total=4.96 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=AUDUSD
+2026-01-12 13:31:04,592 [INFO] ScannerService: PAIR_NONE | ms_total=6.83 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=BTCUSD
+2026-01-12 13:31:04,675 [INFO] ScannerService: PAIR_OK | blocked_reason=null | blocked_winner_strategy_id=null | candidates=null | candidates_top=null | detector=soft_combine | detectors=null | direction=SELL | failover_used=false | final_strategy=soft_combine | hh=null | hits=null | hl=null | lh=null | ll=null | min_score=null | ms_total=5.45 | params_digest=null | regime=null | regime_evidence=null | rr=3.00 | scan_id=1768195864388-1d4a | score=null | strategy_id=default_f9198d | symbol=EURAUD | tf=M15 | top_hits=null | winner_strategy_id=default_f9198d
+2026-01-12 13:31:05,684 [INFO] ScannerService: PAIR_NONE | ms_total=5.30 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=EURCHF
+2026-01-12 13:31:05,743 [INFO] ScannerService: PAIR_NONE | ms_total=5.99 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=EURGBP
+2026-01-12 13:31:05,806 [INFO] ScannerService: PAIR_NONE | ms_total=3.45 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=EURJPY
+2026-01-12 13:31:05,866 [INFO] ScannerService: PAIR_NONE | ms_total=3.12 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=EURUSD
+2026-01-12 13:31:05,929 [INFO] ScannerService: PAIR_NONE | ms_total=5.29 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=GBPJPY
+2026-01-12 13:31:05,995 [INFO] ScannerService: PAIR_NONE | ms_total=4.84 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=GBPUSD
+2026-01-12 13:31:06,059 [INFO] ScannerService: PAIR_NONE | ms_total=7.63 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=NZDUSD
+2026-01-12 13:31:06,168 [INFO] ScannerService: PAIR_OK | blocked_reason=null | blocked_winner_strategy_id=null | candidates=null | candidates_top=null | detector=soft_combine | detectors=null | direction=BUY | failover_used=false | final_strategy=soft_combine | hh=null | hits=null | hl=null | lh=null | ll=null | min_score=null | ms_total=6.16 | params_digest=null | regime=null | regime_evidence=null | rr=3.00 | scan_id=1768195864388-1d4a | score=null | strategy_id=default_f9198d | symbol=USDCAD | tf=M15 | top_hits=null | winner_strategy_id=default_f9198d
+2026-01-12 13:31:07,370 [INFO] ScannerService: PAIR_NONE | ms_total=5.34 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=USDCHF
+2026-01-12 13:31:07,436 [INFO] ScannerService: PAIR_NONE | ms_total=5.55 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=USDJPY
+2026-01-12 13:31:07,471 [INFO] ScannerService: PAIR_NONE | ms_total=5.64 | reason=NO_HITS | scan_id=1768195864388-1d4a | strategy_id=default_f9198d | symbol=XAUUSD
+2026-01-12 13:31:07,472 [INFO] ScannerService: SCAN_END | scan_id=1768195864388-1d4a | signals=0 | total_ms=3084
+2026-01-12 13:31:07,474 [INFO] ScannerService: SCAN_START | pairs=15 | scan_id=1768195867473-7d5f | strategies_count=1 | ts=2026-01-12T13:31:07.473562 | users=1
+2026-01-12 13:31:07,510 [INFO] ScannerService: PAIR_NONE | ms_total=4.25 | reason=NO_HITS | scan_id=1768195867473-7d5f | strategy_id=default_f9198d | symbol=AUDJPY
+2026-01-12 13:31:07,547 [INFO] ScannerService: PAIR_NONE | ms_total=4.84 | reason=NO_HITS | scan_id=1768195867473-7d5f | strategy_id=default_f9198d | symbol=AUDUSD
+2026-01-12 13:31:07,584 [INFO] ScannerService: PAIR_NONE | ms_total=7.36 | reason=NO_HITS | scan_id=1768195867473-7d5f | strategy_id=default_f9198d | symbol=BTCUSD
+2026-01-12 13:31:07,641 [INFO] ScannerService: PAIR_OK | blocked_reason=null | blocked_winner_strategy_id=null | candidates=null | candidates_top=null | detector=soft_combine | detectors=null | direction=SELL | failover_used=false | final_strategy=soft_combine | hh=null | hits=null | hl=null | lh=null | ll=null | min_score=null | ms_total=6.71 | params_digest=null | regime=null | regime_evidence=null | rr=3.00 | scan_id=1768195867473-7d5f | score=null | strategy_id=default_f9198d | symbol=EURAUD | tf=M15 | top_hits=null | winner_strategy_id=default_f9198d
