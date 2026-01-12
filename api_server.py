@@ -826,6 +826,129 @@ async def list_presets():
     return {"ok": True, "presets": presets, "count": len(presets)}
 
 
+@app.post("/api/signals/{signal_id}/explain", dependencies=[Depends(require_internal_key)])
+async def explain_signal(signal_id: str):
+    """Generate AI explanation for a signal using OpenAI.
+    
+    Returns a detailed explanation in Mongolian about why this signal 
+    was generated and what conditions were met.
+    """
+    import os
+    
+    # Find signal in history
+    path = _signals_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No signals history found")
+    
+    signal_data = None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                    sid = str(obj.get("signal_id") or obj.get("id") or "")
+                    if sid == signal_id:
+                        signal_data = obj
+                        break
+                except Exception:
+                    continue
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading signals: {e}")
+    
+    if not signal_data:
+        raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
+    
+    # Check if OpenAI is available
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        # Return a basic explanation without AI
+        return {
+            "ok": True,
+            "signal_id": signal_id,
+            "explain_type": "basic",
+            "explanation": _build_basic_explanation(signal_data),
+        }
+    
+    # Use AI explainer
+    try:
+        from ai_explainer import explain_signal_ganbayar
+        
+        # Prepare signal dict for explainer
+        explain_input = {
+            "pair": signal_data.get("symbol", ""),
+            "direction": signal_data.get("direction", ""),
+            "timeframe": signal_data.get("tf") or signal_data.get("timeframe", "M5"),
+            "entry": signal_data.get("entry", 0),
+            "sl": signal_data.get("sl", 0),
+            "tp": signal_data.get("tp", 0),
+            "rr": signal_data.get("rr", 0),
+            "context": {
+                "h1_trend": signal_data.get("evidence", {}).get("h1_trend"),
+                "h1_levels": signal_data.get("evidence", {}).get("h1_levels"),
+                "detectors_triggered": signal_data.get("evidence", {}).get("detectors_triggered", []),
+            }
+        }
+        
+        ai_explanation = explain_signal_ganbayar(explain_input)
+        
+        return {
+            "ok": True,
+            "signal_id": signal_id,
+            "explain_type": "ai",
+            "explanation": ai_explanation,
+            "signal_summary": {
+                "symbol": signal_data.get("symbol"),
+                "direction": signal_data.get("direction"),
+                "entry": signal_data.get("entry"),
+                "sl": signal_data.get("sl"),
+                "tp": signal_data.get("tp"),
+                "rr": signal_data.get("rr"),
+            }
+        }
+    except Exception as e:
+        # Fallback to basic explanation
+        return {
+            "ok": True,
+            "signal_id": signal_id,
+            "explain_type": "basic",
+            "explanation": _build_basic_explanation(signal_data),
+            "ai_error": str(e),
+        }
+
+
+def _build_basic_explanation(signal_data: dict) -> str:
+    """Build a basic explanation without AI."""
+    symbol = signal_data.get("symbol", "")
+    direction = signal_data.get("direction", "")
+    entry = signal_data.get("entry", 0)
+    sl = signal_data.get("sl", 0)
+    tp = signal_data.get("tp", 0)
+    rr = signal_data.get("rr", 0)
+    evidence = signal_data.get("evidence", {})
+    detectors = evidence.get("detectors_triggered", [])
+    
+    lines = [
+        f"📊 {symbol} - {direction} сигнал",
+        "",
+        f"Entry: {entry}",
+        f"SL: {sl}",
+        f"TP: {tp}",
+        f"R:R: {rr:.2f}" if rr else "",
+        "",
+        "Илэрсэн нөхцлүүд:",
+    ]
+    
+    if detectors:
+        for d in detectors:
+            lines.append(f"  • {d}")
+    else:
+        lines.append("  • Тодорхой detector бүртгэгдээгүй")
+    
+    return "\n".join(lines)
+
+
 @app.get("/api/user/{user_id}/strategies")
 async def get_user_strategies(user_id: str, api_key: str = Depends(require_internal_key)):
     """Get user's saved strategies."""
