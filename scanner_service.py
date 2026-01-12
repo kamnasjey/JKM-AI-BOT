@@ -223,6 +223,9 @@ class ScannerService:
         self._state_dirty = False
         self._state_last_saved_ts: float = 0.0
         self._state_save_min_interval_sec: float = 2.0
+        
+        # Lock to prevent concurrent scan cycles
+        self._scan_lock = asyncio.Lock() if hasattr(asyncio, 'Lock') else None
 
         # Performance guard counters (best-effort)
         self._perf_cycles: int = 0
@@ -686,6 +689,7 @@ class ScannerService:
         # Warmup: fetch roughly last 7 days of M5 candles (7*24*12 = 2016).
         # Poll: every 5 minutes to align with M5 candle formation.
         # Note: IG demo/live may hit historical-data allowance; fallback avoids total downtime.
+        # The on_cycle_complete callback triggers a scan after each ingest cycle.
         self.ingestor = DataIngestor(
             provider=provider,
             fallback_provider=(fallback_provider if (provider is not fallback_provider) else None),
@@ -694,6 +698,7 @@ class ScannerService:
             incremental_limit=5,
             persist_path=_CACHE_PERSIST_PATH,
             persist_every_cycles=1,
+            on_cycle_complete=self._on_ingest_cycle_complete,
         )
         ingestor_task = asyncio.create_task(self.ingestor.run_forever())
 
@@ -786,7 +791,36 @@ class ScannerService:
         await ingestor_task
         logger.info("Service Loop Shutdown.")
 
+    async def _on_ingest_cycle_complete(self) -> None:
+        """Called by DataIngestor after each ingest cycle completes.
+        
+        This triggers a scan immediately after fresh candle data is available,
+        rather than waiting for a fixed scheduler interval.
+        """
+        if self._stop_event.is_set():
+            return
+        
+        log_kv(logger, "INGEST_CYCLE_COMPLETE", message="Triggering scan after ingest cycle")
+        
+        try:
+            await self._scan_cycle()
+        except Exception as e:
+            log_kv_error(logger, "INGEST_TRIGGERED_SCAN_ERROR", error=str(e))
+
     async def _scan_cycle(self):
+        # Prevent concurrent scan cycles (from scheduler + ingest callback)
+        if self._scan_lock is None:
+            self._scan_lock = asyncio.Lock()
+        
+        if self._scan_lock.locked():
+            log_kv(logger, "SCAN_SKIP_LOCKED", message="Scan already in progress, skipping")
+            return
+        
+        async with self._scan_lock:
+            await self._do_scan_cycle()
+    
+    async def _do_scan_cycle(self):
+        """Actual scan cycle implementation."""
         scan_id = make_scan_id()
         timestamp = datetime.now()
         t0 = time.perf_counter()

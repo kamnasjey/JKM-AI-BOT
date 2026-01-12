@@ -4,7 +4,10 @@ import asyncio
 import os
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Callable, Awaitable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 from providers.base import MarketDataProvider
 from data_providers.base import DataProvider
@@ -31,6 +34,7 @@ class DataIngestor:
         incremental_limit: int = 5,
         persist_path: str | None = None,
         persist_every_cycles: int = 1,
+        on_cycle_complete: "Callable[[], Awaitable[None]] | None" = None,
     ):
         self.provider = provider
         self.fallback_provider = fallback_provider
@@ -42,6 +46,7 @@ class DataIngestor:
         self._cycles = 0
         self._running = False
         self._cooldown_until: dict[str, float] = {}
+        self._on_cycle_complete = on_cycle_complete
 
     async def run_forever(self):
         self._running = True
@@ -66,6 +71,14 @@ class DataIngestor:
                         market_cache.save_json(self.persist_path)
                     except Exception as e:
                         logger.warning(f"Ingestor: Failed to persist cache: {e}")
+                
+                # 2.6 Trigger scan cycle callback after data refresh
+                if self._on_cycle_complete:
+                    try:
+                        logger.info("Ingestor: Triggering scan cycle callback...")
+                        await self._on_cycle_complete()
+                    except Exception as e:
+                        logger.error(f"Ingestor: Callback error: {e}")
                 
                 # 3. Wait
                 logger.info(f"Ingestor: Sleeping {self.poll_interval}s...")
