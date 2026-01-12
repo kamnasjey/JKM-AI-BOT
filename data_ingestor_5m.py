@@ -30,7 +30,7 @@ class DataIngestor:
         provider: MarketDataProvider | DataProvider,
         fallback_provider: MarketDataProvider | DataProvider | None = None,
         poll_interval: int = 60,
-        warmup: int = 500,
+        warmup: int = 3000,
         incremental_limit: int = 5,
         persist_path: str | None = None,
         persist_every_cycles: int = 1,
