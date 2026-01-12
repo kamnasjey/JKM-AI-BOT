@@ -169,6 +169,12 @@ class LoginPayload(BaseModel):
     password: str
 
 
+class BillingCheckoutPayload(BaseModel):
+    plan_id: str
+    success_url: str
+    cancel_url: str
+
+
 class EngineLevel(BaseModel):
     price: float
     label: Optional[str] = None
@@ -549,6 +555,123 @@ def api_profile(request: Request) -> Any:
     return get_profile(str(account["user_id"]))
 
 
+@app.get("/api/me")
+def api_me(request: Request) -> Any:
+    account, _ = _require_account(request)
+    profile = get_profile(str(account["user_id"]))
+    from core.plans import PLANS, effective_max_pairs, effective_plan_id
+
+    pid = effective_plan_id(profile)
+    spec = PLANS.get(pid)
+    return {
+        "ok": True,
+        "user": _public_user(account),
+        "plan": {
+            "plan_id": pid,
+            "label": spec.label if spec else pid,
+            "status": str(profile.get("plan_status") or "active"),
+            "max_pairs": int(effective_max_pairs(profile)),
+        },
+    }
+
+
+@app.get("/api/billing/plans")
+def api_billing_plans(request: Request) -> Any:
+    _require_account(request)
+    from core.plans import PLANS
+
+    items = [
+        {"plan_id": p.plan_id, "label": p.label, "max_pairs": int(p.max_pairs)}
+        for p in PLANS.values()
+    ]
+    items.sort(key=lambda x: (0 if x["plan_id"] == "free" else 1, x["max_pairs"]))
+    return {"ok": True, "plans": items}
+
+
+@app.post("/api/billing/checkout")
+def api_billing_checkout(request: Request, payload: BillingCheckoutPayload) -> Any:
+    account, _ = _require_account(request)
+    user_id = str(account.get("user_id"))
+    profile = get_profile(user_id)
+
+    from core.plans import normalize_plan_id
+
+    plan_id = normalize_plan_id(payload.plan_id)
+    if plan_id == "free":
+        # Free plan is immediate, no checkout.
+        from user_db import set_user_plan
+
+        updated = set_user_plan(user_id=user_id, plan_id="free")
+        return {"ok": True, "plan_id": "free", "profile": updated}
+
+    stripe_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    price_pro = (os.getenv("STRIPE_PRICE_PRO") or "").strip()
+    price_pro_plus = (os.getenv("STRIPE_PRICE_PRO_PLUS") or "").strip()
+    price_id = price_pro if plan_id == "pro" else price_pro_plus
+    if not stripe_key or not price_id:
+        raise HTTPException(status_code=500, detail="Stripe billing not configured")
+
+    from services.stripe_billing import create_checkout_session
+
+    session = create_checkout_session(
+        stripe_secret_key=stripe_key,
+        price_id=price_id,
+        success_url=str(payload.success_url),
+        cancel_url=str(payload.cancel_url),
+        customer_email=str(account.get("email") or "") or None,
+        client_reference_id=user_id,
+        metadata={
+            "user_id": user_id,
+            "plan_id": plan_id,
+        },
+    )
+
+    return {"ok": True, "plan_id": plan_id, "checkout_url": session.get("url"), "session_id": session.get("id")}
+
+
+@app.post("/api/billing/stripe/webhook")
+async def api_billing_stripe_webhook(request: Request) -> Any:
+    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+    payload_bytes = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    from services.stripe_billing import parse_event, verify_webhook_signature
+
+    if not verify_webhook_signature(
+        payload_bytes=payload_bytes,
+        stripe_signature_header=sig,
+        webhook_secret=secret,
+    ):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    event = parse_event(payload_bytes)
+    event_type = str(event.get("type") or "")
+
+    if event_type == "checkout.session.completed":
+        obj = (((event.get("data") or {}).get("object")) or {})
+        if isinstance(obj, dict):
+            meta = obj.get("metadata") or {}
+            user_id = str(meta.get("user_id") or obj.get("client_reference_id") or "").strip()
+            plan_id = str(meta.get("plan_id") or "").strip()
+
+            if user_id and plan_id:
+                from user_db import set_user_plan
+
+                set_user_plan(
+                    user_id=user_id,
+                    plan_id=plan_id,
+                    plan_status="active",
+                    stripe_customer_id=str(obj.get("customer") or "") or None,
+                    stripe_subscription_id=str(obj.get("subscription") or "") or None,
+                )
+
+    # Always return 200 to Stripe.
+    return {"ok": True}
+
+
 @app.get("/api/strategies")
 def api_get_strategies(request: Request) -> Any:
     account, _ = _require_account(request)
@@ -793,6 +916,28 @@ async def api_update_profile(request: Request) -> Dict[str, Any]:
             # If validation fails, still keep merged storage behavior stable
             pass
 
+        # Plan enforcement: server-side limit for watch_pairs.
+        try:
+            from core.plans import clamp_pairs, effective_max_pairs, validate_pairs
+
+            max_pairs = int(effective_max_pairs(merged))
+            ok, err = validate_pairs(merged.get("watch_pairs"), max_pairs)
+            if not ok:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "watch_pairs_limit",
+                        "message": err,
+                        "max_pairs": max_pairs,
+                    },
+                )
+            merged["watch_pairs"] = clamp_pairs(merged.get("watch_pairs"), max_pairs)
+        except HTTPException:
+            raise
+        except Exception:
+            # Never block profile save due to plan helper issues.
+            pass
+
         name = payload.get("name") or merged.get("name") or existing.get("name") or f"User {user_id}"
         merged["name"] = name
         add_user(user_id, name, merged)
@@ -854,7 +999,7 @@ def api_markets_symbols() -> List[str]:
     from market_data_cache import market_cache
     from watchlist_union import get_union_watchlist
     # We prefer the union watchlist as it drives the ingestor
-    return get_union_watchlist(max_per_user=5)
+    return get_union_watchlist()
 
 
 @app.get("/api/candles")

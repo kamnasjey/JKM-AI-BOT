@@ -148,7 +148,23 @@ def create_account(
 
     init_db()
     conn = _get_connection()
-    profile_json = json.dumps(profile or {})
+    prof = dict(profile or {})
+    try:
+        from core.plans import normalize_plan_id
+
+        if "plan" not in prof or not str(prof.get("plan") or "").strip():
+            prof["plan"] = "free"
+        else:
+            prof["plan"] = normalize_plan_id(prof.get("plan"))
+
+        if "plan_status" not in prof or not str(prof.get("plan_status") or "").strip():
+            prof["plan_status"] = "active"
+    except Exception:
+        # Never block account creation due to plan helpers.
+        prof.setdefault("plan", "free")
+        prof.setdefault("plan_status", "active")
+
+    profile_json = json.dumps(prof)
     hashed = _hash_password(password)
     assigned_id = user_id or uuid4().hex
     now = datetime.utcnow().isoformat()
@@ -386,6 +402,57 @@ def add_user(user_id: str, name: str, profile: Dict[str, Any]):
         )
     conn.commit()
     conn.close()
+
+
+def set_user_plan(
+    *,
+    user_id: str,
+    plan_id: str,
+    plan_status: str = "active",
+    stripe_customer_id: Optional[str] = None,
+    stripe_subscription_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update a user's plan in their stored profile JSON.
+
+    We keep this inside the profile_json for minimal migrations.
+    Also clamps watch_pairs to plan max to ensure server-side enforcement.
+    """
+
+    init_db()
+    account = get_account(str(user_id))
+    if not account:
+        # Create minimal record if missing.
+        add_user(str(user_id), f"User {user_id}", {"user_id": str(user_id)})
+        account = get_account(str(user_id))
+
+    prof = get_user(str(user_id)) or {}
+    if not isinstance(prof, dict):
+        prof = {}
+
+    from core.plans import clamp_pairs, normalize_plan_id, plan_max_pairs
+
+    pid = normalize_plan_id(plan_id)
+    prof["plan"] = pid
+    prof["plan_status"] = str(plan_status or "active")
+
+    if stripe_customer_id is not None:
+        prof["stripe_customer_id"] = str(stripe_customer_id)
+    if stripe_subscription_id is not None:
+        prof["stripe_subscription_id"] = str(stripe_subscription_id)
+
+    max_pairs = int(plan_max_pairs(pid))
+    prof["watch_pairs"] = clamp_pairs(prof.get("watch_pairs"), max_pairs)
+
+    # Preserve display name.
+    name = (
+        prof.get("name")
+        or (account.get("name") if isinstance(account, dict) else None)
+        or f"User {user_id}"
+    )
+    prof["name"] = name
+
+    add_user(str(user_id), str(name), prof)
+    return get_user(str(user_id)) or prof
 
 
 def get_user(user_id: str) -> Optional[Dict[str, Any]]:

@@ -50,7 +50,7 @@ class DataIngestor:
         while self._running:
             try:
                 # 1. Get Symbols
-                symbols = get_union_watchlist(max_per_user=5)
+                symbols = get_union_watchlist()
                 logger.info(f"Ingestor: Refreshing {len(symbols)} symbols: {symbols}")
                 
                 # 2. Poll Data

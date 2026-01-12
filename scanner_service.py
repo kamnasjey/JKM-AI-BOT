@@ -299,7 +299,7 @@ class ScannerService:
             try:
                 from watchlist_union import get_union_watchlist
 
-                sym_list = [str(s).strip().upper() for s in get_union_watchlist(max_per_user=15) or []]
+                sym_list = [str(s).strip().upper() for s in get_union_watchlist() or []]
             except Exception:
                 sym_list = []
         if not sym_list:
@@ -589,7 +589,7 @@ class ScannerService:
                 from watchlist_union import get_union_watchlist
                 from core.ingest_debug import ingest_debug_enabled
 
-                syms = get_union_watchlist(max_per_user=5)
+                syms = get_union_watchlist()
                 loaded = 0
                 for sym in syms:
                     items = load_tail(sym, "m5", limit=int(getattr(config, "MARKETDATA_PRELOAD_M5_LIMIT", 5000) or 5000))
@@ -805,7 +805,7 @@ class ScannerService:
             try:
                 from watchlist_union import get_union_watchlist
 
-                wl = get_union_watchlist(max_per_user=15)
+                wl = get_union_watchlist()
             except Exception:
                 wl = []
 
@@ -1469,6 +1469,12 @@ class ScannerService:
         profile = user
         tz_offset_hours = int(profile.get("tz_offset_hours") or 0)
         pairs = profile.get("watch_pairs", [])
+        try:
+            from core.plans import clamp_pairs, effective_max_pairs
+
+            pairs = clamp_pairs(pairs, int(effective_max_pairs(profile)))
+        except Exception:
+            pass
         if not pairs:
             return 0
 

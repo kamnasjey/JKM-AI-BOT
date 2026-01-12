@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Set
+from typing import List, Optional, Set
 
 from user_db import list_users
 from user_profile import get_profile
@@ -58,14 +58,24 @@ def _hard_default_massive_watchlist() -> List[str]:
         "BTCUSD",
     ]
 
-def get_union_watchlist(max_per_user: int = 5) -> List[str]:
+def get_union_watchlist(max_per_user: Optional[int] = None) -> List[str]:
     """
-    Scans all users, reads their active watchlist (max 5),
-    and returns a unique union list of symbols.
+    Scans all users, reads their active watchlist, and returns a unique union list.
+
+    If max_per_user is provided, it is applied as an additional safety cap.
     """
     # Massive-only mode: always use the canonical 15-symbol config.
     provider = (os.getenv("DATA_PROVIDER") or os.getenv("MARKET_DATA_PROVIDER") or "").strip().lower()
-    if provider in ("massive", "massiveio", "massive_io"):
+    massive_mode = provider in ("massive", "massiveio", "massive_io")
+    allow_user_massive = str(os.getenv("ALLOW_USER_WATCHLIST_MASSIVE") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
+
+    if massive_mode and not allow_user_massive:
         wl = _load_massive_watchlist()
         return wl if wl else _hard_default_massive_watchlist()
 
@@ -90,8 +100,18 @@ def get_union_watchlist(max_per_user: int = 5) -> List[str]:
             
         user_pairs = profile.get("watch_pairs", [])
         if isinstance(user_pairs, list):
+            try:
+                from core.plans import effective_max_pairs
+
+                per_user_cap = int(effective_max_pairs(profile))
+            except Exception:
+                per_user_cap = 5
+
+            if isinstance(max_per_user, int) and max_per_user > 0:
+                per_user_cap = min(per_user_cap, int(max_per_user))
+
             # Take top N
-            selected = user_pairs[:max_per_user]
+            selected = user_pairs[:per_user_cap]
             for s in selected:
                 if isinstance(s, str):
                     unique_symbols.add(_canon_symbol(s))
