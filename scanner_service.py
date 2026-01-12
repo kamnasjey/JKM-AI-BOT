@@ -2402,6 +2402,25 @@ class ScannerService:
                     # Top-level safety catch for persistence to never crash engine
                     pass
 
+                # Record to cooldown state immediately after persist (not just on Telegram send)
+                # This prevents duplicate signals even when Telegram is disabled
+                if self._state_loaded:
+                    try:
+                        self._state_store.record_sent(
+                            signal_key,
+                            now_ts,
+                            symbol,
+                            direction=str(signal.direction),
+                            timeframe=str(entry_tf),
+                            strategy_id=str(strategy_id or ""),
+                        )
+                        day_key = self._get_day_key_utc(tz_offset_hours)
+                        self._state_store.increment_daily(symbol, entry_tf, str(strategy_id or ""), day_key)
+                        self._state_dirty = True
+                        self._save_state_debounced(scan_id=scan_id)
+                    except Exception:
+                        log_kv_error(logger, "STATE_RECORD_PERSIST_ERROR", scan_id=scan_id, symbol=symbol)
+
                 log_kv(
                     logger,
                     "PAIR_OK",

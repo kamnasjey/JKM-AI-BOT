@@ -1,0 +1,36 @@
+{
+  "folders": [
+    {
+      "name": "backend (ganbayar_trading_bot)",
+      "path": "."
+    },
+    {
+      "name": "frontend (JKM-DASHBOARD)",
+      "path": "../JKM-DASHBOARD"
+    }
+  ],
+  "settings": {
+    "git.openRepositoryInParentFolders": "never",
+    "search.followSymlinks": false,
+    "files.exclude": {
+      "**/.venv": true,
+      "**/__pycache__": true,
+      "**/.next": true,
+      "**/node_modules": true,
+      "**/.pytest_cache": true
+    },
+    "search.exclude": {
+      "**/.venv": true,
+      "**/__pycache__": true,
+      "**/.next": true,
+      "**/node_modules": true,
+      "**/.pytest_cache": true
+    },
+    "files.watcherExclude": {
+      "**/.venv/**": true,
+      "**/__pycache__/**": true,
+      "**/.next/**": true,
+      "**/node_modules/**": true
+    }
+  }
+}
