@@ -103,6 +103,21 @@ Run these commands on the server to verify a successful deployment:
 
 All internal endpoints require header: `x-internal-api-key: <YOUR_INTERNAL_API_KEY>`
 
+### VPS Update (Scripted)
+
+From the VPS repo root:
+
+```bash
+chmod +x scripts/vps_update_backend.sh scripts/vps_verify_backend.sh
+./scripts/vps_update_backend.sh feature/billing-plans
+```
+
+In another shell (or after logs look good):
+
+```bash
+BASE_URL=http://127.0.0.1:8000 ./scripts/vps_verify_backend.sh
+```
+
 ### Owner Admin Default Strategy (Optional)
 
 By default, the backend requires users to explicitly configure a strategy before scanning.
