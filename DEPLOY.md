@@ -103,6 +103,20 @@ Run these commands on the server to verify a successful deployment:
 
 All internal endpoints require header: `x-internal-api-key: <YOUR_INTERNAL_API_KEY>`
 
+### Owner Admin Default Strategy (Optional)
+
+By default, the backend requires users to explicitly configure a strategy before scanning.
+
+If you want the owner/admin account to have the previously-default working strategy preloaded,
+set this env var in your Docker Compose:
+
+```bash
+OWNER_ADMIN_USER_ID=<your_admin_user_id>
+```
+
+On startup, if that user has no saved strategies yet, the backend will seed `range_reversal_v1`
+into the per-user strategies store.
+
 ### Engine Status (Truth Source)
 ```bash
 curl -H "x-internal-api-key: $INTERNAL_API_KEY" http://localhost:8000/api/engine/status

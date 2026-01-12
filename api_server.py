@@ -49,8 +49,57 @@ def _startup_scanner():
     """Launch the APScheduler-based 5-minute scan cycle on server start."""
     import logging
     _log = logging.getLogger("api_server.startup")
+
+    def _seed_owner_admin_strategy() -> None:
+        """Seed a default strategy for the owner admin only.
+
+        This keeps the product rule: normal users must explicitly choose strategies,
+        while allowing the owner/admin account to have a known working default.
+        """
+
+        owner_user_id = (os.getenv("OWNER_ADMIN_USER_ID") or os.getenv("OWNER_USER_ID") or "").strip()
+        if not owner_user_id:
+            return
+
+        try:
+            from core.user_strategies_store import load_user_strategies, save_user_strategies
+
+            existing = load_user_strategies(owner_user_id)
+            if existing:
+                return
+
+            # Previously-default strategy (range_reversal_v1).
+            default_owner_strategy = {
+                "strategy_id": "range_reversal_v1",
+                "enabled": True,
+                "priority": 50,
+                "engine_version": "indicator_free_v1",
+                "min_score": 1.0,
+                "min_rr": 2.0,
+                "allowed_regimes": ["RANGE", "CHOP"],
+                "detectors": ["range_box_edge", "sr_bounce", "fakeout_trap"],
+                "detector_weights": {"range_box_edge": 1.2},
+                "family_weights": {"sr": 1.1, "range": 1.0},
+                "conflict_epsilon": 0.05,
+                "confluence_bonus_per_family": 0.25,
+            }
+
+            res = save_user_strategies(owner_user_id, [default_owner_strategy])
+            try:
+                _log.info(
+                    "Seeded owner admin strategy user_id=%s count=%s warnings=%s",
+                    owner_user_id,
+                    int(len(res.get("strategies") or [])),
+                    list(res.get("warnings") or []),
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            _log.error("Failed seeding owner admin strategy: %s", e, exc_info=True)
+
     try:
         import scanner_service
+        _seed_owner_admin_strategy()
         result = scanner_service.start()
         _log.info("Scanner scheduler started: %s", result)
     except Exception as e:
