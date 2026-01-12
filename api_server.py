@@ -897,6 +897,208 @@ async def copy_preset_to_user(
 
 
 # =========================
+# Strategy Sharing (Public Library)
+# =========================
+SHARED_STRATEGIES_FILE = Path("data/shared_strategies.json")
+
+
+def _load_shared_strategies() -> list[dict]:
+    """Load all shared strategies from disk."""
+    if not SHARED_STRATEGIES_FILE.exists():
+        return []
+    try:
+        with open(SHARED_STRATEGIES_FILE, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+            return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_shared_strategies(strategies: list[dict]) -> bool:
+    """Save shared strategies to disk."""
+    try:
+        SHARED_STRATEGIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(SHARED_STRATEGIES_FILE, "w", encoding="utf-8") as fp:
+            json.dump(strategies, fp, indent=2, default=str)
+        return True
+    except Exception:
+        return False
+
+
+@app.get("/api/strategies/shared")
+async def get_shared_strategies(
+    api_key: str = Depends(require_internal_key)
+):
+    """Get all publicly shared strategies.
+    
+    Returns a list of strategies that users have shared with the community.
+    """
+    strategies = _load_shared_strategies()
+    return {
+        "ok": True,
+        "strategies": strategies,
+        "count": len(strategies),
+    }
+
+
+@app.post("/api/user/{user_id}/strategies/share")
+async def share_strategy(
+    user_id: str,
+    payload: dict = Body(...),
+    api_key: str = Depends(require_internal_key)
+):
+    """Share a strategy to the public library.
+    
+    Body: {
+        "strategy_id": "my_strategy_name",
+        "detectors": ["detector1", "detector2"],
+        "min_score": 1.0,
+        "min_rr": 2.0,
+        "allowed_regimes": ["RANGE", "TREND_BULL"],
+        "description": "Optional description of the strategy"
+    }
+    """
+    strategy_id = payload.get("strategy_id") or payload.get("name") or ""
+    if not strategy_id:
+        raise HTTPException(status_code=400, detail="strategy_id required")
+    
+    detectors = payload.get("detectors", [])
+    if not detectors or not isinstance(detectors, list):
+        raise HTTPException(status_code=400, detail="detectors list required")
+    
+    # Build shared strategy entry
+    shared_entry = {
+        "share_id": f"{user_id}_{strategy_id}_{int(time.time())}",
+        "strategy_id": strategy_id,
+        "author_id": user_id,
+        "detectors": detectors,
+        "min_score": payload.get("min_score", 1.0),
+        "min_rr": payload.get("min_rr", 2.0),
+        "allowed_regimes": payload.get("allowed_regimes", ["RANGE", "TREND_BULL", "TREND_BEAR", "CHOP"]),
+        "description": payload.get("description", ""),
+        "shared_at": datetime.now(timezone.utc).isoformat(),
+        "copies": 0,
+        "rating": 0,
+    }
+    
+    # Load existing, check for duplicates, append
+    all_shared = _load_shared_strategies()
+    
+    # Remove any existing share by same user with same strategy_id
+    all_shared = [s for s in all_shared if not (s.get("author_id") == user_id and s.get("strategy_id") == strategy_id)]
+    
+    all_shared.append(shared_entry)
+    
+    if not _save_shared_strategies(all_shared):
+        raise HTTPException(status_code=500, detail="Failed to save shared strategy")
+    
+    return {
+        "ok": True,
+        "share_id": shared_entry["share_id"],
+        "message": f"Strategy '{strategy_id}' shared successfully",
+    }
+
+
+@app.post("/api/user/{user_id}/strategies/import/{share_id}")
+async def import_shared_strategy(
+    user_id: str,
+    share_id: str,
+    api_key: str = Depends(require_internal_key)
+):
+    """Import a shared strategy to user's strategies.
+    
+    Copies the shared strategy into user's strategy list.
+    """
+    from core.user_strategies_store import load_user_strategies, save_user_strategies
+    
+    # Find the shared strategy
+    all_shared = _load_shared_strategies()
+    shared = next((s for s in all_shared if s.get("share_id") == share_id), None)
+    
+    if not shared:
+        raise HTTPException(status_code=404, detail=f"Shared strategy '{share_id}' not found")
+    
+    # Load user's existing strategies
+    user_strategies = load_user_strategies(user_id)
+    
+    # Create a copy with new ID (avoid conflicts)
+    import_strategy = {
+        "strategy_id": f"{shared['strategy_id']}_imported",
+        "enabled": False,  # Start disabled so user can review
+        "detectors": shared["detectors"],
+        "min_score": shared.get("min_score", 1.0),
+        "min_rr": shared.get("min_rr", 2.0),
+        "allowed_regimes": shared.get("allowed_regimes", ["RANGE", "TREND_BULL", "TREND_BEAR", "CHOP"]),
+        "imported_from": share_id,
+        "original_author": shared.get("author_id"),
+    }
+    
+    # Check if already imported
+    existing = next((s for s in user_strategies if s.get("imported_from") == share_id), None)
+    if existing:
+        return {
+            "ok": True,
+            "already_imported": True,
+            "strategy_id": existing.get("strategy_id"),
+            "message": "Strategy already imported",
+        }
+    
+    # Add to user's strategies
+    user_strategies.append(import_strategy)
+    result = save_user_strategies(user_id, user_strategies)
+    
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail="Failed to import strategy")
+    
+    # Increment copies count on shared strategy
+    for s in all_shared:
+        if s.get("share_id") == share_id:
+            s["copies"] = s.get("copies", 0) + 1
+            break
+    _save_shared_strategies(all_shared)
+    
+    return {
+        "ok": True,
+        "imported": True,
+        "strategy_id": import_strategy["strategy_id"],
+        "message": f"Strategy imported successfully",
+    }
+
+
+@app.delete("/api/user/{user_id}/strategies/shared/{share_id}")
+async def delete_shared_strategy(
+    user_id: str,
+    share_id: str,
+    api_key: str = Depends(require_internal_key)
+):
+    """Delete a strategy that user has shared.
+    
+    User can only delete their own shared strategies.
+    """
+    all_shared = _load_shared_strategies()
+    
+    # Find and verify ownership
+    strategy = next((s for s in all_shared if s.get("share_id") == share_id), None)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Shared strategy not found")
+    
+    if strategy.get("author_id") != user_id:
+        raise HTTPException(status_code=403, detail="You can only delete your own shared strategies")
+    
+    # Remove
+    all_shared = [s for s in all_shared if s.get("share_id") != share_id]
+    
+    if not _save_shared_strategies(all_shared):
+        raise HTTPException(status_code=500, detail="Failed to delete shared strategy")
+    
+    return {
+        "ok": True,
+        "deleted": True,
+        "share_id": share_id,
+    }
+
+
+# =========================
 # Telegram Connect Flow (v0.2)
 # =========================
 @app.post("/api/telegram/connect-url", dependencies=[Depends(require_internal_key)])
