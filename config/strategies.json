@@ -4,7 +4,7 @@
   "strategies": [
     {
       "strategy_id": "range_reversal_v1",
-      "enabled": true,
+      "enabled": false,
       "priority": 50,
       "engine_version": "indicator_free_v1",
       "min_score": 1.0,

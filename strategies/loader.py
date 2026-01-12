@@ -463,12 +463,21 @@ def load_strategies_from_profile(profile: Dict[str, Any]) -> StrategyLoadResult:
     errors: List[str] = []
     raw_items: List[Any] = []
 
+    # Require explicit strategies by default.
+    # Legacy fallback (treating the whole profile as a strategy) can be re-enabled
+    # only by setting ALLOW_PROFILE_STRATEGY_FALLBACK=1.
+    require_explicit = _env_flag("REQUIRE_USER_STRATEGY", default=True)
+    if "REQUIRE_STRATEGIES" in os.environ:
+        require_explicit = _env_flag("REQUIRE_STRATEGIES", default=require_explicit)
+    if _env_flag("ALLOW_PROFILE_STRATEGY_FALLBACK", default=False):
+        require_explicit = False
+
     if isinstance(profile.get("strategy"), (dict, str)):
         raw_items = [profile.get("strategy")]
     elif isinstance(profile.get("strategies"), list) and profile.get("strategies"):
         raw_items = list(profile.get("strategies") or [])
     else:
-        raw_items = [profile]
+        raw_items = [] if require_explicit else [profile]
 
     out: List[Dict[str, Any]] = []
     try:

@@ -1504,6 +1504,28 @@ class ScannerService:
         strategies = load_res.strategies
         profile_errors = list(load_res.errors)
 
+        # Hard rule: do not scan unless user explicitly configured a strategy.
+        # If strategies are invalid, surface PROFILE_INVALID; otherwise NO_STRATEGY_CONFIGURED.
+        if not strategies:
+            reason = "PROFILE_INVALID" if profile_errors else "NO_STRATEGY_CONFIGURED"
+            internal_reason = "profile_invalid" if profile_errors else "no_strategy_configured"
+            extra: Dict[str, Any] = {}
+            if profile_errors and notify_mode == "admin_only":
+                extra["profile_errors"] = ";".join([str(e) for e in profile_errors[:6]])
+            if isinstance(outcomes, dict):
+                for pair in pairs:
+                    symbol = str(pair or "").strip().upper()
+                    if not symbol:
+                        continue
+                    row = {
+                        "kind": "NONE",
+                        "reason": reason,
+                        "internal_reason": internal_reason,
+                    }
+                    row.update(extra)
+                    outcomes[symbol] = row
+            return 0
+
         active_strategy = strategies[0] if strategies else profile
         strategy_id = None
         try:
