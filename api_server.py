@@ -68,9 +68,10 @@ def _startup_scanner():
             if existing:
                 return
 
-            # Previously-default strategy (range_reversal_v1).
+            # Previously-default strategy (range_reversal_v1), saved under a friendly name.
             default_owner_strategy = {
-                "strategy_id": "range_reversal_v1",
+                "strategy_id": "jkm_strategy",
+                "name": "JKM strategy",
                 "enabled": True,
                 "priority": 50,
                 "engine_version": "indicator_free_v1",

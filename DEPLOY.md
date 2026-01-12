@@ -114,8 +114,8 @@ set this env var in your Docker Compose:
 OWNER_ADMIN_USER_ID=<your_admin_user_id>
 ```
 
-On startup, if that user has no saved strategies yet, the backend will seed `range_reversal_v1`
-into the per-user strategies store.
+On startup, if that user has no saved strategies yet, the backend will seed the owner strategy
+(`strategy_id: jkm_strategy`, `name: JKM strategy`) into the per-user strategies store.
 
 ### Engine Status (Truth Source)
 ```bash
