@@ -510,14 +510,23 @@ class MassiveDataProvider(DataProvider):
 
             out: List[Candle] = []
             cur = since_ts
+            logger.info(
+                "PAGINATION_START | symbol=%s | since=%s | until=%s | page_limit=%d | window_mins=%.1f",
+                symbol, since_ts.isoformat(), until_ts.isoformat(), page_limit, window.total_seconds()/60
+            )
+            page_count = 0
             # Walk forward in time; each request is bounded by window and capped by page_limit.
             while cur < until_ts:
                 nxt = min(until_ts, cur + window)
-                out.extend(_fetch_once(start=cur, end=nxt, per_request_limit=page_limit))
+                page_count += 1
+                page_candles = _fetch_once(start=cur, end=nxt, per_request_limit=page_limit)
+                out.extend(page_candles)
+                logger.debug("PAGINATION_PAGE | page=%d | cur=%s | nxt=%s | fetched=%d", page_count, cur, nxt, len(page_candles))
                 # Advance by window; safety to avoid infinite loops.
                 if nxt <= cur:
                     break
                 cur = nxt
+            logger.info("PAGINATION_END | symbol=%s | pages=%d | total_candles=%d", symbol, page_count, len(out))
 
             # Deduplicate + sort (normalize already sorts asc, but across pages we recheck)
             by_ts: Dict[datetime, Candle] = {c.ts: c for c in out}
