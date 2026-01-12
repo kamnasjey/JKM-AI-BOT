@@ -30,7 +30,7 @@ class DataIngestor:
         provider: MarketDataProvider | DataProvider,
         fallback_provider: MarketDataProvider | DataProvider | None = None,
         poll_interval: int = 60,
-        warmup: int = 3000,
+        warmup: int = 10000,
         incremental_limit: int = 5,
         persist_path: str | None = None,
         persist_every_cycles: int = 1,
@@ -129,9 +129,11 @@ class DataIngestor:
             if last_ts is not None:
                 since_fetch = last_ts - timedelta(minutes=5 * int(limit) * 3)
             else:
-                # Warmup: fetch from N bars ago to enable pagination in provider
-                # M5 = 5 min, so N bars = N*5 minutes. Add 50% buffer for weekend gaps.
-                since_fetch = datetime.now(timezone.utc) - timedelta(minutes=5 * int(limit) * 2)
+                # Warmup: fetch from 60 days ago to get enough data for H4 resampling.
+                # Forex markets are closed ~2 days/week, so we need extra buffer.
+                # 45 H4 bars = 7.5 days of forex data = ~12 calendar days minimum.
+                # We use 60 days to be safe and get sufficient historical context.
+                since_fetch = datetime.now(timezone.utc) - timedelta(days=60)
 
             provider_name = str(getattr(self.provider, "name", "unknown")).upper()
             if hasattr(self.provider, "fetch_candles"):
