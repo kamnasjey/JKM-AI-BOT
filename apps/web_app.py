@@ -846,7 +846,21 @@ def _get_market_candles_from_cache(symbol: str, tf: str = "5m", limit: int = 500
     if limit and int(limit) > 0:
         candles = candles[-int(limit) :]
 
-    return candles
+    # Display convenience: convert ISO/datetime candle `time` to Ulaanbaatar time.
+    # This is output-only; we copy dicts to avoid mutating the in-memory cache.
+    try:
+        from core.time_utils import to_ulaanbaatar_iso
+
+        out: List[Dict[str, Any]] = []
+        for c in candles:
+            if not isinstance(c, dict):
+                continue
+            cc = dict(c)
+            cc["time"] = to_ulaanbaatar_iso(cc.get("time"))
+            out.append(cc)
+        return out
+    except Exception:
+        return candles
 
 @app.get("/api/markets/symbols")
 def api_markets_symbols() -> List[str]:

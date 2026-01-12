@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field, computed_field
 
 from core.signal_payload_v1 import EngineAnnotationsV1, SignalPayloadV1
 
+from datetime import datetime, timezone
+
+from core.time_utils import to_ulaanbaatar_iso
+
 
 class DrawingObjectPublicV1(BaseModel):
     """Minimal chart drawing primitives for UI (public v1)."""
@@ -67,6 +71,12 @@ class SignalPayloadPublicV1(BaseModel):
     @property
     def ts_utc(self) -> int:
         return int(self.created_at)
+
+    @computed_field(return_type=str)
+    @property
+    def ts_ulaanbaatar(self) -> str:
+        dt_utc = datetime.fromtimestamp(int(self.created_at), tz=timezone.utc)
+        return str(to_ulaanbaatar_iso(dt_utc))
 
     @computed_field(return_type=str)
     @property
