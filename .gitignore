@@ -62,6 +62,8 @@ user_profiles.json
 allowed_users.json
 instruments.json
 state/
+!state/__init__.py
+!state/metrics_alert_state.py
 data/
 .idea/
 .DS_Store
