@@ -2319,12 +2319,107 @@ def get_ws_status():
 
 
 # ============================================================================
-# STRATEGY TESTER API ENDPOINTS
+# STRATEGY SIMULATOR API - Main simulation endpoint
+# ============================================================================
+
+@app.post("/api/strategy-sim/run", dependencies=[Depends(require_internal_key)])
+async def run_strategy_simulator(payload: dict = Body(...)):
+    """
+    Run strategy simulation on historical data.
+    
+    This is the main strategy testing endpoint that:
+    - Loads historical candles for the specified time range
+    - Runs detectors WITHOUT lookahead (entry at next bar)
+    - Simulates trades with SL/TP outcomes
+    - Returns metrics and trade list
+    
+    Request body:
+    {
+        "user_id": "string|null",
+        "symbol": "XAUUSD",
+        "timeframe": "M5",
+        "range": {
+            "mode": "PRESET" | "CUSTOM",
+            "preset": "7D" | "30D" | "90D" | "6M" | "1Y",
+            "from_ts": number|null,
+            "to_ts": number|null
+        },
+        "strategy_id": "string",
+        "assumptions": {
+            "intrabar_policy": "SL_FIRST",
+            "spread": 0,
+            "slippage": 0,
+            "commission": 0,
+            "max_trades": 1000
+        }
+    }
+    
+    Response:
+    {
+        "ok": true,
+        "symbol": "XAUUSD",
+        "timeframe": "M5",
+        "from_ts": 1234567890,
+        "to_ts": 1234567890,
+        "strategy_id": "my_strategy",
+        "summary": {
+            "entries": 25,
+            "tp_hits": 15,
+            "sl_hits": 10,
+            "winrate": 60.0,
+            "avg_r": 1.2,
+            "profit_factor": 1.8,
+            "avg_duration_bars": 12.5,
+            "total_r": 30.0
+        },
+        "trades": [...],
+        "warnings": []
+    }
+    """
+    from core.strategy_simulator import SimulatorRequest, run_simulation
+    
+    try:
+        request = SimulatorRequest.from_dict(payload)
+        response = run_simulation(request)
+        return response.to_dict()
+    except Exception as e:
+        import traceback
+        return {
+            "ok": False,
+            "error": {
+                "code": "SIMULATION_ERROR",
+                "message": str(e),
+                "details": {"trace": traceback.format_exc()},
+            },
+        }
+
+
+@app.get("/api/strategy-sim/symbols", dependencies=[Depends(require_internal_key)])
+async def get_simulator_symbols():
+    """Get available symbols from cache for simulator."""
+    cache_path = Path("state/market_cache.json")
+    if not cache_path.exists():
+        return {"ok": False, "error": "Cache not found", "symbols": []}
+    
+    try:
+        with open(cache_path, "r") as f:
+            cache = json.load(f)
+        symbols_data = cache.get("symbols", cache)
+        symbols = [k for k in symbols_data.keys() if k not in ("version",)]
+        return {"ok": True, "symbols": sorted(symbols)}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "symbols": []}
+
+
+# ============================================================================
+# STRATEGY TESTER API ENDPOINTS (Legacy - deprecated, use /api/strategy-sim/run)
 # ============================================================================
 
 @app.post("/api/strategy-tester/run", dependencies=[Depends(require_internal_key)])
 async def run_strategy_tester(payload: dict = Body(...)):
     """
+    [DEPRECATED] Use /api/strategy-sim/run instead.
+    
     Run a strategy test with the configured detectors.
     
     Request body:
