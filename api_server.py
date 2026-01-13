@@ -2360,8 +2360,9 @@ async def run_strategy_tester(payload: dict = Body(...)):
     from core.strategy_tester import TesterConfig, StrategySimulator, TesterStorage, IntrabarPolicy
     from core.strategy_tester.execution import Candle
     from detectors.registry import DETECTOR_REGISTRY, get_detector
-    from engine.primitives import compute_swings, compute_sr_zones, compute_fibo_levels
-    from engine.models import Candle as EngineCandle, Swing, PrimitiveResults, SwingResult, SRZoneResult, TrendStructureResult, FibLevelResult
+    # Use correct imports 
+    from engine_blocks import Candle as EngineCandle
+    from core.primitives import SwingDetector, SRZoneDetector, FibLevelCalculator, SwingResult, SRZoneResult, TrendStructureResult, FibLevelResult, PrimitiveResults
     from detectors.base import DetectorContext, DetectorConfig
     
     try:
@@ -2454,21 +2455,17 @@ async def run_strategy_tester(payload: dict = Body(...)):
             if not candle_objs:
                 return None
             
-            # Compute primitives
-            try:
-                swings = compute_swings(candle_objs, lookback=20)
-            except:
-                swings = []
+            # Compute primitives using detector classes
+            swing_detector = SwingDetector(lookback=20)
+            swings = swing_detector.detect(candle_objs)
             
             swing_result = SwingResult(
-                highs=[s for s in swings if s.type == "high"],
-                lows=[s for s in swings if s.type == "low"],
+                highs=[s for s in swings if getattr(s, 'type', 'high') == "high"],
+                lows=[s for s in swings if getattr(s, 'type', 'low') == "low"],
             )
             
-            try:
-                zones = compute_sr_zones(candle_objs, swings)
-            except:
-                zones = []
+            sr_detector = SRZoneDetector()
+            zones = sr_detector.detect(candle_objs, swings)
             
             sr_result = SRZoneResult(zones=zones)
             
@@ -2481,15 +2478,11 @@ async def run_strategy_tester(payload: dict = Body(...)):
             # Fib levels
             fib_result = FibLevelResult(levels=[])
             if len(swings) >= 2:
-                high_swings = [s for s in swings if s.type == "high"]
-                low_swings = [s for s in swings if s.type == "low"]
-                if high_swings and low_swings:
-                    try:
-                        fib_result = FibLevelResult(
-                            levels=compute_fibo_levels(high_swings[-1], low_swings[-1], candle_objs[-1].close)
-                        )
-                    except:
-                        pass
+                fib_calc = FibLevelCalculator()
+                try:
+                    fib_result = fib_calc.compute(swings, candle_objs[-1].close)
+                except:
+                    pass
             
             primitives = PrimitiveResults(
                 swings=swing_result,
