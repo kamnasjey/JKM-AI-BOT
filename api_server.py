@@ -2406,14 +2406,18 @@ async def run_strategy_tester(payload: dict = Body(...)):
             with open(cache_path, "r") as f:
                 cache = json.load(f)
             
-            sym_data = cache.get(symbol, {})
-            raw_candles = sym_data.get(entry_tf, sym_data.get("M5", []))
+            # Cache format: {"version": 1, "symbols": {"XAUUSD": [candles], ...}}
+            symbols_data = cache.get("symbols", cache)  # fallback to old format
+            raw_candles = symbols_data.get(symbol, [])
             
-            if not raw_candles:
-                for tf_key in ["M5", "M15", "H1", "H4"]:
-                    if sym_data.get(tf_key):
-                        raw_candles = sym_data[tf_key]
-                        break
+            # Handle if symbols_data[symbol] is dict with timeframes (old format)
+            if isinstance(raw_candles, dict):
+                raw_candles = raw_candles.get(entry_tf, raw_candles.get("M5", []))
+                if not raw_candles:
+                    for tf_key in ["M5", "M15", "H1", "H4"]:
+                        if raw_candles.get(tf_key):
+                            raw_candles = raw_candles[tf_key]
+                            break
             
             for c in raw_candles:
                 candles.append({
