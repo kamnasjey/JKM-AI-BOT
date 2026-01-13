@@ -480,10 +480,17 @@ def load_strategies_from_profile(profile: Dict[str, Any]) -> StrategyLoadResult:
         raw_items = [] if require_explicit else [profile]
 
     out: List[Dict[str, Any]] = []
+    # Use the main detector registry (detectors/registry.py) which has all detectors
+    # rather than engines/detectors which may be incomplete
     try:
-        known_detectors = set(detector_registry.list_detectors())
+        from detectors.registry import DETECTOR_REGISTRY
+        known_detectors = set(DETECTOR_REGISTRY.keys())
     except Exception:
-        known_detectors = set()
+        # Fallback to engines registry
+        try:
+            known_detectors = set(detector_registry.list_detectors())
+        except Exception:
+            known_detectors = set()
     for idx, raw in enumerate(raw_items):
         obj, err = _parse_json_maybe(raw)
         if err:
