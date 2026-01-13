@@ -328,10 +328,44 @@ def load_strategy(
     """
     Load strategy by ID.
     
+    Checks in order:
+    1. User strategies from user_profiles.db (SQLite)
+    2. User strategies from state/user_strategies/{user_id}.json
+    3. Shared strategies from state/shared_strategies.json
+    
     Returns:
         (strategy_dict, error_message)
     """
-    # Try user strategies first
+    import sqlite3
+    
+    # Try user strategies from SQLite database first
+    if user_id:
+        db_path = Path("user_profiles.db")
+        if db_path.exists():
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT strategies FROM user_profiles WHERE id = ?",
+                    (user_id,)
+                )
+                row = cursor.fetchone()
+                conn.close()
+                
+                if row and row["strategies"]:
+                    strategies_json = row["strategies"]
+                    if strategies_json:
+                        strategies = json.loads(strategies_json)
+                        if isinstance(strategies, list):
+                            for s in strategies:
+                                sid = s.get("strategy_id") or s.get("id")
+                                if sid == strategy_id:
+                                    return s, None
+            except Exception as e:
+                pass  # Fall through to other sources
+    
+    # Try user strategies from JSON file
     if user_id:
         user_file = Path(f"state/user_strategies/{user_id}.json")
         if user_file.exists():
