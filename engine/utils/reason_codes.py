@@ -13,6 +13,7 @@ STABLE_PAIR_NONE_REASONS = {
     "DAILY_LIMIT_REACHED",
     "PROFILE_INVALID",
     "STRATEGY_INVALID",
+    "INSUFFICIENT_DATA",
     "UNKNOWN_ERROR",
 }
 
@@ -48,9 +49,12 @@ _ALIAS_TO_STABLE = {
     "PROFILE_INVALID": "PROFILE_INVALID",
     "STRATEGY_INVALID": "STRATEGY_INVALID",
 
-    # Generic fallbacks / non-stable internal reasons
-    "data_gap": "UNKNOWN_ERROR",
-    "no_m5": "UNKNOWN_ERROR",
+    # Data availability issues
+    "data_gap": "INSUFFICIENT_DATA",
+    "no_m5": "INSUFFICIENT_DATA",
+    "INSUFFICIENT_DATA": "INSUFFICIENT_DATA",
+
+    # Generic fallbacks
     "DETECTOR_ERROR": "UNKNOWN_ERROR",
 }
 
@@ -59,6 +63,7 @@ _PRIORITY = [
     "PROFILE_INVALID",
     "STRATEGY_INVALID",
     "NO_DETECTORS_FOR_REGIME",
+    "INSUFFICIENT_DATA",
     "NO_HITS",
     "SCORE_BELOW_MIN",
     "RR_BELOW_MIN",
