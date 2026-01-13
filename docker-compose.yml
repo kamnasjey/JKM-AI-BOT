@@ -15,8 +15,7 @@ services:
       # Logs
       - ./logs:/app/logs
     environment:
-      - TZ=Asia/Ulaanbaatar
-      # Add overrides if needed, e.g.
+      - TZ=Asia/Ulaanbaatar      - INTERNAL_API_KEY=3d2ee6bbbb787c90ebc25f39b26eca1569c8dde81ab4be7d908df477c9d1bda6      # Add overrides if needed, e.g.
       # - NOTIFY_MODE=production
 
   # Optional: Nginx for reverse proxy / SSL handling

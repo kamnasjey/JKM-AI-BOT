@@ -855,6 +855,415 @@ def run_backtest(payload: dict = Body(...)):
 
 
 # ============================================================================
+# SIMULATION BACKTEST API - Run detectors on historical candle data
+# ============================================================================
+
+@app.post("/api/backtest/simulate", dependencies=[Depends(require_internal_key)])
+def run_simulation_backtest(payload: dict = Body(...)):
+    """Run a simulation backtest - run detectors on historical candle data.
+    
+    Body: {
+        "strategy_id": "my_strategy",  # optional: use strategy's detectors
+        "detectors": ["range_box_edge", "sr_bounce"],  # optional: specific detectors
+        "symbol": "XAUUSD",  # optional: specific symbol (default: all)
+        "days": 90,  # how many days back (default 90)
+        "min_rr": 2.0,  # minimum R:R filter (default 2.0)
+    }
+    
+    Process:
+    1. Load historical candle data for the specified period
+    2. Run selected detectors on each candle bar
+    3. When detector fires, record entry/sl/tp
+    4. Check if SL or TP was hit in subsequent candles
+    5. Return win/loss statistics
+    """
+    import logging
+    from datetime import datetime, timedelta, timezone
+    from collections import defaultdict
+    
+    _log = logging.getLogger("backtest.simulate")
+    
+    strategy_id = (payload.get("strategy_id") or "").strip() or None
+    detector_names = payload.get("detectors") or []
+    symbol_filter = (payload.get("symbol") or "").strip().upper() or None
+    days = int(payload.get("days") or 90)
+    min_rr = float(payload.get("min_rr") or 2.0)
+    
+    # Get detectors from strategy if specified
+    if strategy_id and not detector_names:
+        try:
+            from core.user_strategies_store import load_all_strategies
+            all_strats = load_all_strategies()
+            for strat in all_strats:
+                if strat.get("strategy_id") == strategy_id:
+                    detector_names = strat.get("detectors", [])
+                    min_rr = strat.get("min_rr", min_rr)
+                    break
+        except Exception as e:
+            _log.warning("Could not load strategy %s: %s", strategy_id, e)
+    
+    if not detector_names:
+        return {
+            "ok": False,
+            "error": "No detectors specified. Select a strategy or provide detector list.",
+            "total_entries": 0,
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "win_rate": None,
+        }
+    
+    # Get symbols to backtest
+    symbols_to_test = []
+    if symbol_filter:
+        symbols_to_test = [symbol_filter]
+    else:
+        # Use canonical symbols
+        symbols_to_test = [
+            "EURUSD", "USDJPY", "GBPUSD", "AUDUSD", "USDCAD",
+            "NZDUSD", "EURJPY", "GBPJPY", "XAUUSD", "BTCUSD",
+        ]
+    
+    # Load detector registry
+    try:
+        from detectors.registry import DETECTOR_REGISTRY
+    except ImportError:
+        return {"ok": False, "error": "Detector registry not available"}
+    
+    # Validate detectors exist
+    valid_detectors = []
+    for d_name in detector_names:
+        if d_name in DETECTOR_REGISTRY:
+            valid_detectors.append(d_name)
+        else:
+            _log.warning("Detector %s not found in registry", d_name)
+    
+    if not valid_detectors:
+        return {"ok": False, "error": f"No valid detectors found. Available: {list(DETECTOR_REGISTRY.keys())[:10]}..."}
+    
+    # Results tracking
+    all_entries = []
+    wins = 0
+    losses = 0
+    pending = 0
+    by_symbol = defaultdict(lambda: {"entries": 0, "wins": 0, "losses": 0, "pending": 0})
+    by_detector = defaultdict(lambda: {"entries": 0, "wins": 0, "losses": 0})
+    
+    # Time range
+    now = datetime.now(timezone.utc)
+    start_dt = now - timedelta(days=days)
+    
+    # Load candle data from market_cache.json (not in-memory cache singleton)
+    from pathlib import Path
+    from market_data_cache import MarketDataCache
+    
+    cache_path = Path("state/market_cache.json")
+    temp_cache = MarketDataCache(max_len=20000)
+    if cache_path.exists():
+        loaded = temp_cache.load_json(str(cache_path))
+        _log.info("Loaded %d symbols from market_cache.json", loaded)
+    else:
+        _log.warning("market_cache.json not found at %s", cache_path)
+        return {
+            "ok": False,
+            "error": f"No market data found. Cache file missing: {cache_path}",
+            "total_entries": 0,
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "win_rate": None,
+        }
+    
+    # Process each symbol
+    for symbol in symbols_to_test:
+        try:
+            # Get M5 candles from loaded cache
+            m5_candles = temp_cache.get_candles(symbol)
+            if not m5_candles or len(m5_candles) < 200:
+                _log.debug("Not enough M5 candles for %s: %d", symbol, len(m5_candles) if m5_candles else 0)
+                continue
+            
+            # Resample M5 to M15
+            m15_candles = _resample_candles(m5_candles, 3)  # 3 x 5min = 15min
+            
+            if len(m15_candles) < 50:
+                _log.debug("Not enough M15 candles after resample for %s: %d", symbol, len(m15_candles))
+                continue
+            
+            # Filter to time range
+            filtered_candles = []
+            for c in m15_candles:
+                c_time = c.get("time")
+                if isinstance(c_time, datetime):
+                    c_dt = c_time if c_time.tzinfo else c_time.replace(tzinfo=timezone.utc)
+                elif isinstance(c_time, (int, float)):
+                    c_dt = datetime.fromtimestamp(c_time, tz=timezone.utc)
+                else:
+                    continue
+                if c_dt >= start_dt:
+                    filtered_candles.append(c)
+            
+            if len(filtered_candles) < 20:
+                continue
+            
+            _log.info("Backtesting %s with %d candles", symbol, len(filtered_candles))
+            
+            # Build H4 candles for trend detection (resample M15 to H4 = 16 bars)
+            h4_candles = _resample_candles(filtered_candles, 16)  # 16 x 15min = 4 hours
+            
+            # Import primitives types
+            from core.primitives import (
+                PrimitiveResults, SwingResult, SRZoneResult, 
+                TrendStructureResult, FibLevelResult
+            )
+            from engine_blocks import Swing, Candle
+            
+            # Convert dict candles to Candle dataclass objects
+            def dict_to_candle(d):
+                return Candle(
+                    time=d.get("time"),
+                    open=float(d.get("open", 0)),
+                    high=float(d.get("high", 0)),
+                    low=float(d.get("low", 0)),
+                    close=float(d.get("close", 0)),
+                )
+            
+            filtered_candles_obj = [dict_to_candle(c) for c in filtered_candles]
+            h4_candles_obj = [dict_to_candle(c) for c in h4_candles]
+            
+            # Run through candles simulating real-time
+            for i in range(50, len(filtered_candles_obj) - 20):  # Leave room for outcome check
+                current_candles = filtered_candles_obj[:i+1]
+                current_candle = current_candles[-1]
+                
+                # For H4 trend candles, approximate using ratio
+                h4_index = min(i // 16, len(h4_candles_obj) - 1)
+                current_h4_candles = h4_candles_obj[:h4_index+1] if h4_index > 0 else h4_candles_obj[:1]
+                
+                # Build proper PrimitiveResults from candles
+                if len(current_candles) > 30:
+                    recent = current_candles[-30:]
+                    highs = [c.high for c in recent]
+                    lows = [c.low for c in recent]
+                    closes = [c.close for c in recent]
+                    
+                    swing_high = max(highs)
+                    swing_low = min(lows)
+                    last_close = closes[-1]
+                    
+                    # Create swing
+                    swing = Swing(
+                        low=swing_low,
+                        high=swing_high,
+                    )
+                    
+                    # Determine trend direction (string literal)
+                    if closes[-1] > closes[0]:
+                        trend_dir = "up"
+                    elif closes[-1] < closes[0]:
+                        trend_dir = "down"
+                    else:
+                        trend_dir = "flat"
+                    
+                    primitives = PrimitiveResults(
+                        swing=SwingResult(swing=swing, direction=trend_dir, found=True),
+                        sr_zones=SRZoneResult(
+                            support=swing_low,
+                            resistance=swing_high,
+                            last_close=last_close,
+                            zones=[(swing_low, swing_high)],
+                        ),
+                        trend_structure=TrendStructureResult(
+                            direction=trend_dir,
+                            structure_valid=True,
+                        ),
+                        fib_levels=FibLevelResult(
+                            retrace={0.382: swing_low + (swing_high - swing_low) * 0.382,
+                                    0.5: swing_low + (swing_high - swing_low) * 0.5,
+                                    0.618: swing_low + (swing_high - swing_low) * 0.618},
+                            extensions={1.618: swing_high + (swing_high - swing_low) * 0.618},
+                            swing=swing,
+                        ),
+                    )
+                else:
+                    continue  # Skip if not enough data
+                
+                # Run each detector
+                for d_name in valid_detectors:
+                    try:
+                        detector_class = DETECTOR_REGISTRY[d_name]
+                        detector_instance = detector_class()
+                        
+                        # Default user config
+                        user_config = {
+                            "min_rr": min_rr,
+                            "trend_tf": "H4",
+                            "entry_tf": "M15",
+                        }
+                        
+                        # Run detector with proper parameters
+                        result = detector_instance.detect(
+                            pair=symbol,
+                            entry_candles=current_candles,
+                            trend_candles=current_h4_candles,
+                            primitives=primitives,
+                            user_config=user_config,
+                        )
+                        
+                        if result and hasattr(result, "direction"):
+                            direction = result.direction
+                            entry_price = result.entry if hasattr(result, "entry") else current_candle.close
+                            sl = result.sl if hasattr(result, "sl") else None
+                            tp = result.tp if hasattr(result, "tp") else None
+                            rr = result.rr if hasattr(result, "rr") else None
+                            
+                            # Skip if no SL/TP or RR too low
+                            if not sl or not tp:
+                                continue
+                            if rr and rr < min_rr:
+                                continue
+                            
+                            # Check outcome using future candles (dict format for _check_sl_tp_hit)
+                            future_candles = filtered_candles[i+1:i+100]  # Check next 100 candles (~25 hours)
+                            outcome = _check_sl_tp_hit(direction, entry_price, sl, tp, future_candles)
+                            
+                            entry_record = {
+                                "symbol": symbol,
+                                "detector": d_name,
+                                "direction": direction,
+                                "entry": entry_price,
+                                "sl": sl,
+                                "tp": tp,
+                                "rr": rr,
+                                "outcome": outcome,
+                                "time": str(current_candle.time),
+                            }
+                            all_entries.append(entry_record)
+                            
+                            by_symbol[symbol]["entries"] += 1
+                            by_detector[d_name]["entries"] += 1
+                            
+                            if outcome == "WIN":
+                                wins += 1
+                                by_symbol[symbol]["wins"] += 1
+                                by_detector[d_name]["wins"] += 1
+                            elif outcome == "LOSS":
+                                losses += 1
+                                by_symbol[symbol]["losses"] += 1
+                                by_detector[d_name]["losses"] += 1
+                            else:
+                                pending += 1
+                                by_symbol[symbol]["pending"] += 1
+                    
+                    except Exception as e:
+                        _log.debug("Detector %s error: %s", d_name, e)
+                        continue
+        
+        except Exception as e:
+            _log.warning("Error processing symbol %s: %s", symbol, e)
+            continue
+    
+    # Calculate win rates
+    total_entries = len(all_entries)
+    decided = wins + losses
+    win_rate = round(wins / decided, 4) if decided > 0 else None
+    
+    # Symbol stats with win rates
+    symbol_stats = {}
+    for sym, stats in by_symbol.items():
+        sym_decided = stats["wins"] + stats["losses"]
+        stats["win_rate"] = round(stats["wins"] / sym_decided, 4) if sym_decided > 0 else None
+        symbol_stats[sym] = stats
+    
+    # Detector stats with win rates
+    detector_stats = {}
+    for det, stats in by_detector.items():
+        det_decided = stats["wins"] + stats["losses"]
+        stats["win_rate"] = round(stats["wins"] / det_decided, 4) if det_decided > 0 else None
+        detector_stats[det] = stats
+    
+    return {
+        "ok": True,
+        "mode": "simulation",
+        "total_entries": total_entries,
+        "wins": wins,
+        "losses": losses,
+        "pending": pending,
+        "win_rate": win_rate,
+        "by_symbol": symbol_stats,
+        "by_detector": detector_stats,
+        "sample_entries": all_entries[:20],
+        "filters": {
+            "strategy_id": strategy_id,
+            "detectors": valid_detectors,
+            "symbol": symbol_filter,
+            "days": days,
+            "min_rr": min_rr,
+        },
+    }
+
+
+def _resample_candles(candles: list, factor: int) -> list:
+    """Resample candles by a factor (e.g., factor=3 means 3 x M5 = M15).
+    
+    Args:
+        candles: List of candle dicts with time, open, high, low, close, volume
+        factor: Number of source candles per target candle
+        
+    Returns:
+        Resampled candle list
+    """
+    if not candles or factor < 1:
+        return []
+    
+    result = []
+    for i in range(0, len(candles) - factor + 1, factor):
+        group = candles[i:i + factor]
+        if len(group) < factor:
+            break
+        
+        resampled = {
+            "time": group[0].get("time"),
+            "open": group[0].get("open"),
+            "high": max(c.get("high", 0) for c in group),
+            "low": min(c.get("low", float("inf")) for c in group),
+            "close": group[-1].get("close"),
+            "volume": sum(c.get("volume", 0) for c in group),
+        }
+        result.append(resampled)
+    
+    return result
+
+
+def _check_sl_tp_hit(direction: str, entry: float, sl: float, tp: float, future_candles: list) -> str:
+    """Check if SL or TP was hit in future candles.
+    
+    Returns: "WIN" if TP hit first, "LOSS" if SL hit first, "PENDING" if neither
+    """
+    if not future_candles:
+        return "PENDING"
+    
+    for candle in future_candles:
+        high = candle.get("high", 0)
+        low = candle.get("low", 0)
+        
+        if direction == "BUY":
+            # For BUY: SL is below entry, TP is above entry
+            if low <= sl:
+                return "LOSS"
+            if high >= tp:
+                return "WIN"
+        else:  # SELL
+            # For SELL: SL is above entry, TP is below entry
+            if high >= sl:
+                return "LOSS"
+            if low <= tp:
+                return "WIN"
+    
+    return "PENDING"
+
+
+# ============================================================================
 # SIGNAL OUTCOME TRACKING API
 # ============================================================================
 
@@ -1518,24 +1927,24 @@ def get_signal_detail(
 
 @app.get("/api/symbols")
 def get_symbols():
-    """Return the union watchlist (all tradeable symbols)."""
+    """Return all tradeable symbols (canonical 15-symbol list)."""
+    # Always return the canonical list for dashboard backtest
+    CANONICAL_SYMBOLS = [
+        "EURUSD", "USDJPY", "GBPUSD", "AUDUSD", "USDCAD",
+        "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP",
+        "AUDJPY", "EURAUD", "EURCHF", "XAUUSD", "BTCUSD",
+    ]
+    
     try:
         from watchlist_union import get_union_watchlist
         symbols = get_union_watchlist()
-        if symbols:
+        if symbols and len(symbols) > 3:
             return {"ok": True, "symbols": symbols, "count": len(symbols)}
     except Exception:
         pass
     
-    # Fallback: try market_cache
-    try:
-        from market_data_cache import market_cache
-        symbols = market_cache.get_all_symbols()
-        return {"ok": True, "symbols": list(symbols), "count": len(symbols)}
-    except Exception:
-        pass
-    
-    return {"ok": True, "symbols": [], "count": 0}
+    # Fallback: return canonical list
+    return {"ok": True, "symbols": CANONICAL_SYMBOLS, "count": len(CANONICAL_SYMBOLS)}
 
 
 # =========================
@@ -1908,3 +2317,314 @@ def get_ws_status():
         "active_connections": signals_broadcaster.connection_count,
     }
 
+
+# ============================================================================
+# STRATEGY TESTER API ENDPOINTS
+# ============================================================================
+
+@app.post("/api/strategy-tester/run", dependencies=[Depends(require_internal_key)])
+async def run_strategy_tester(payload: dict = Body(...)):
+    """
+    Run a strategy test with the configured detectors.
+    
+    Request body:
+    {
+        "symbol": "XAUUSD",
+        "detectors": ["pinbar_at_level", "break_retest"],
+        "entry_tf": "M15",
+        "trend_tf": "H4",
+        "start_date": "2024-01-01",  // optional
+        "end_date": "2024-12-31",    // optional
+        "spread_pips": 1.0,
+        "slippage_pips": 0.5,
+        "commission_per_trade": 0.0,
+        "initial_capital": 10000.0,
+        "risk_per_trade_pct": 1.0,
+        "intrabar_policy": "sl_first",  // sl_first, tp_first, bar_magnifier, random
+        "min_rr": 2.0,
+        "min_score": 1.0,
+        "max_trades_per_day": 10,
+        "max_bars_in_trade": 100
+    }
+    
+    Returns:
+    {
+        "ok": true,
+        "run_id": "...",
+        "status": "completed",
+        "metrics": {...},
+        "trade_count": 25,
+        "duration_seconds": 1.5
+    }
+    """
+    from core.strategy_tester import TesterConfig, StrategySimulator, TesterStorage, IntrabarPolicy
+    from core.strategy_tester.execution import Candle
+    from detectors.registry import DETECTOR_REGISTRY, get_detector
+    from engine.primitives import compute_swings, compute_sr_zones, compute_fibo_levels
+    from engine.models import Candle as EngineCandle, Swing, PrimitiveResults, SwingResult, SRZoneResult, TrendStructureResult, FibLevelResult
+    from detectors.base import DetectorContext, DetectorConfig
+    
+    try:
+        symbol = payload.get("symbol", "XAUUSD")
+        detectors_list = payload.get("detectors", ["pinbar_at_level"])
+        entry_tf = payload.get("entry_tf", "M15")
+        
+        # Build config
+        intrabar_str = payload.get("intrabar_policy", "sl_first")
+        try:
+            intrabar_policy = IntrabarPolicy(intrabar_str)
+        except:
+            intrabar_policy = IntrabarPolicy.SL_FIRST
+        
+        config = TesterConfig(
+            detectors=detectors_list,
+            symbol=symbol,
+            entry_tf=entry_tf,
+            trend_tf=payload.get("trend_tf", "H4"),
+            start_date=payload.get("start_date"),
+            end_date=payload.get("end_date"),
+            spread_pips=float(payload.get("spread_pips", 1.0)),
+            slippage_pips=float(payload.get("slippage_pips", 0.5)),
+            commission_per_trade=float(payload.get("commission_per_trade", 0.0)),
+            initial_capital=float(payload.get("initial_capital", 10000.0)),
+            risk_per_trade_pct=float(payload.get("risk_per_trade_pct", 1.0)),
+            intrabar_policy=intrabar_policy,
+            min_rr=float(payload.get("min_rr", 2.0)),
+            min_score=float(payload.get("min_score", 1.0)),
+            max_trades_per_day=int(payload.get("max_trades_per_day", 10)),
+            max_bars_in_trade=int(payload.get("max_bars_in_trade", 100)),
+        )
+        
+        # Load candle data
+        candles = []
+        cache_path = Path("state/market_cache.json")
+        if cache_path.exists():
+            with open(cache_path, "r") as f:
+                cache = json.load(f)
+            
+            sym_data = cache.get(symbol, {})
+            raw_candles = sym_data.get(entry_tf, sym_data.get("M5", []))
+            
+            if not raw_candles:
+                for tf_key in ["M5", "M15", "H1", "H4"]:
+                    if sym_data.get(tf_key):
+                        raw_candles = sym_data[tf_key]
+                        break
+            
+            for c in raw_candles:
+                candles.append({
+                    "time": c.get("time", c.get("t", 0)),
+                    "open": c.get("open", c.get("o", 0)),
+                    "high": c.get("high", c.get("h", 0)),
+                    "low": c.get("low", c.get("l", 0)),
+                    "close": c.get("close", c.get("c", 0)),
+                    "volume": c.get("volume", c.get("v", 0)),
+                })
+        
+        if len(candles) < 50:
+            return {"ok": False, "error": f"Insufficient data for {symbol}, need at least 50 candles, got {len(candles)}"}
+        
+        # Create detector function
+        def run_detectors(history: list, idx: int) -> dict | None:
+            """Run all configured detectors on current bar."""
+            if idx < 50:
+                return None
+            
+            # Get detector classes
+            detector_classes = []
+            for det_name in detectors_list:
+                if det_name in DETECTOR_REGISTRY:
+                    detector_classes.append((det_name, DETECTOR_REGISTRY[det_name]))
+            
+            if not detector_classes:
+                return None
+            
+            # Convert history to Candle objects
+            candle_objs = []
+            for c in history:
+                candle_objs.append(EngineCandle(
+                    time=c["time"],
+                    open=c["open"],
+                    high=c["high"],
+                    low=c["low"],
+                    close=c["close"],
+                    volume=c.get("volume", 0),
+                ))
+            
+            if not candle_objs:
+                return None
+            
+            # Compute primitives
+            try:
+                swings = compute_swings(candle_objs, lookback=20)
+            except:
+                swings = []
+            
+            swing_result = SwingResult(
+                highs=[s for s in swings if s.type == "high"],
+                lows=[s for s in swings if s.type == "low"],
+            )
+            
+            try:
+                zones = compute_sr_zones(candle_objs, swings)
+            except:
+                zones = []
+            
+            sr_result = SRZoneResult(zones=zones)
+            
+            # Trend structure
+            trend_result = TrendStructureResult(
+                direction="up" if candle_objs[-1].close > candle_objs[0].close else "down",
+                structure_breaks=[],
+            )
+            
+            # Fib levels
+            fib_result = FibLevelResult(levels=[])
+            if len(swings) >= 2:
+                high_swings = [s for s in swings if s.type == "high"]
+                low_swings = [s for s in swings if s.type == "low"]
+                if high_swings and low_swings:
+                    try:
+                        fib_result = FibLevelResult(
+                            levels=compute_fibo_levels(high_swings[-1], low_swings[-1], candle_objs[-1].close)
+                        )
+                    except:
+                        pass
+            
+            primitives = PrimitiveResults(
+                swings=swing_result,
+                sr_zones=sr_result,
+                trend=trend_result,
+                fib_levels=fib_result,
+            )
+            
+            # Build context
+            ctx = DetectorContext(
+                symbol=symbol,
+                tf=entry_tf,
+                candles=candle_objs,
+                primitives=primitives,
+            )
+            
+            # Run each detector
+            for det_name, det_cls in detector_classes:
+                try:
+                    det_config = DetectorConfig(enabled=True, params={})
+                    detector = det_cls(det_config)
+                    result = detector.detect(ctx)
+                    
+                    if result and result.fired:
+                        # Return first signal found
+                        return {
+                            "detector": det_name,
+                            "direction": result.direction,
+                            "sl": result.sl,
+                            "tp": result.tp,
+                            "score": result.score,
+                            "evidence": result.evidence,
+                            "signal_id": f"{det_name}_{candle_objs[-1].time}",
+                        }
+                except Exception as e:
+                    continue
+            
+            return None
+        
+        # Run simulation
+        simulator = StrategySimulator(config, detector_fn=run_detectors)
+        run = simulator.run(candles)
+        
+        # Save run
+        storage = TesterStorage()
+        storage.save(run)
+        
+        return {
+            "ok": True,
+            "run_id": run.run_id,
+            "status": run.status,
+            "error": run.error,
+            "trade_count": len(run.trades),
+            "metrics": run.metrics.to_dict() if run.metrics else None,
+            "duration_seconds": run.duration_seconds,
+            "config_hash": run.config_hash,
+            "data_hash": run.data_hash,
+        }
+        
+    except Exception as e:
+        import traceback
+        return {"ok": False, "error": str(e), "trace": traceback.format_exc()}
+
+
+@app.get("/api/strategy-tester/runs", dependencies=[Depends(require_internal_key)])
+async def list_tester_runs(limit: int = 50, offset: int = 0):
+    """List all test runs."""
+    from core.strategy_tester import TesterStorage
+    
+    storage = TesterStorage()
+    runs = storage.list_runs(limit=limit, offset=offset)
+    
+    return {
+        "ok": True,
+        "runs": runs,
+        "count": len(runs),
+    }
+
+
+@app.get("/api/strategy-tester/runs/{run_id}", dependencies=[Depends(require_internal_key)])
+async def get_tester_run(run_id: str):
+    """Get a specific test run with full details."""
+    from core.strategy_tester import TesterStorage
+    
+    storage = TesterStorage()
+    run = storage.load(run_id)
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    return {
+        "ok": True,
+        "run": run.to_full_dict(),
+    }
+
+
+@app.get("/api/strategy-tester/runs/{run_id}/trades", dependencies=[Depends(require_internal_key)])
+async def get_tester_run_trades(run_id: str):
+    """Get trades for a specific test run."""
+    from core.strategy_tester import TesterStorage
+    
+    storage = TesterStorage()
+    trades = storage.get_trades(run_id)
+    
+    return {
+        "ok": True,
+        "trades": trades,
+        "count": len(trades),
+    }
+
+
+@app.get("/api/strategy-tester/runs/{run_id}/equity", dependencies=[Depends(require_internal_key)])
+async def get_tester_run_equity(run_id: str):
+    """Get equity curve for a specific test run."""
+    from core.strategy_tester import TesterStorage
+    
+    storage = TesterStorage()
+    equity = storage.get_equity_curve(run_id)
+    
+    return {
+        "ok": True,
+        "equity_curve": equity,
+        "count": len(equity),
+    }
+
+
+@app.delete("/api/strategy-tester/runs/{run_id}", dependencies=[Depends(require_internal_key)])
+async def delete_tester_run(run_id: str):
+    """Delete a test run."""
+    from core.strategy_tester import TesterStorage
+    
+    storage = TesterStorage()
+    success = storage.delete(run_id)
+    
+    return {
+        "ok": success,
+        "deleted": run_id if success else None,
+    }
