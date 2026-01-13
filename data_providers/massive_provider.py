@@ -47,18 +47,25 @@ def _dt_to_iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat()
 
 
-def _dt_to_unix(dt: datetime) -> int:
-    """Convert datetime to Unix timestamp in seconds (NOT milliseconds).
+def _dt_to_ms(dt: datetime) -> int:
+    """Convert datetime to Unix timestamp in milliseconds.
     
-    Polygon API /v2/aggs/ticker/.../range/{from}/{to} expects:
-    - Unix timestamp in SECONDS, or
+    Polygon API /v2/aggs/ticker/.../range/{from}/{to} accepts:
+    - Unix timestamp in MILLISECONDS (not seconds!)
     - Date string like 'YYYY-MM-DD'
     
-    Using milliseconds returns 0 results!
+    Polygon uses milliseconds for timestamps in both request and response.
     """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return int(dt.astimezone(timezone.utc).timestamp())
+    return int(dt.astimezone(timezone.utc).timestamp() * 1000)
+
+
+def _dt_to_date_str(dt: datetime) -> str:
+    """Convert datetime to YYYY-MM-DD format for Polygon API."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
 
 def _sleep_backoff_s(attempt: int, *, base: float = 0.5, cap: float = 12.0) -> float:
@@ -388,10 +395,12 @@ class MassiveDataProvider(DataProvider):
                     # Use a wider window than N*tf to tolerate provider gaps/delays while
                     # still returning only `limit` bars (most recent, due to sort=desc).
                     use_start = end - timedelta(seconds=int(per_request_limit) * int(self._tf_seconds(tf)) * 4)
-                start_ts = _dt_to_unix(use_start)
-                end_ts = _dt_to_unix(end)
+                # Polygon API works best with date string format (YYYY-MM-DD).
+                # Milliseconds and seconds formats sometimes return 0 results.
+                start_date = _dt_to_date_str(use_start)
+                end_date = _dt_to_date_str(end)
                 base = candles_path.rstrip("/")
-                url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_ts}/{end_ts}"
+                url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_date}/{end_date}"
                 params = {
                     "adjusted": "true",
                     # Prefer newest-first so small `limit` calls return the most recent bars.
