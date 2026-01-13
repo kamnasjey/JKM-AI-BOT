@@ -136,15 +136,27 @@ class DataIngestor:
                 since_fetch = datetime.now(timezone.utc) - timedelta(days=60)
 
             provider_name = str(getattr(self.provider, "name", "unknown")).upper()
+            
+            # AUTOFILL: If gap detected (last_ts too old), fetch more candles to fill gap
+            autofill_limit = limit
+            if last_ts is not None:
+                gap_minutes = (datetime.now(timezone.utc) - last_ts).total_seconds() / 60
+                # If gap > 15 minutes (3 candles), autofill by fetching more
+                if gap_minutes > 15:
+                    # Calculate how many 5m candles we're missing
+                    missing_candles = int(gap_minutes / 5) + 5  # +5 buffer
+                    autofill_limit = min(missing_candles, 500)  # cap at 500
+                    logger.info(f"AUTOFILL | symbol={symbol} | gap_mins={gap_minutes:.1f} | fetching={autofill_limit} candles")
+            
             if hasattr(self.provider, "fetch_candles"):
                 # Massive: for small incremental pulls, prefer a "most recent N" request.
                 # This avoids fetching the oldest N bars from a lookback window.
-                if provider_name == "MASSIVE" and last_ts is not None and int(limit) <= 50:
+                if provider_name == "MASSIVE" and last_ts is not None and int(autofill_limit) <= 50:
                     candles = self.provider.fetch_candles(
                         symbol,
                         timeframe="m5",
-                        max_count=limit,
-                        limit=limit,
+                        max_count=autofill_limit,
+                        limit=autofill_limit,
                         since_ts=None,
                         until_ts=datetime.now(timezone.utc),
                     )
@@ -152,8 +164,8 @@ class DataIngestor:
                     candles = self.provider.fetch_candles(
                         symbol,
                         timeframe="m5",
-                        max_count=limit,
-                        limit=limit,
+                        max_count=autofill_limit,
+                        limit=autofill_limit,
                         since_ts=since_fetch,
                         until_ts=datetime.now(timezone.utc),
                     )
@@ -161,7 +173,7 @@ class DataIngestor:
                 candles = self.provider.get_candles(
                     symbol,
                     timeframe="m5",
-                    limit=limit,
+                    limit=autofill_limit,
                     since_ts=since_fetch,
                 )
             fetch_ms = (time.perf_counter() - t_fetch) * 1000.0
