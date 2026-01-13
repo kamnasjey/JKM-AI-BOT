@@ -268,6 +268,7 @@ def health():
 def list_signals(
     limit: int = Query(50, ge=1, le=500),
     symbol: str | None = Query(None, description="Filter by symbol (case-insensitive)"),
+    include_outcomes: bool = Query(True, description="Include SL/TP hit outcomes"),
 ):
     """List signals with optional symbol filter. Newest first."""
     path = _signals_path()
@@ -276,8 +277,26 @@ def list_signals(
     if symbol:
         sym_upper = symbol.strip().upper()
         filtered = [s for s in all_signals if str(s.get("symbol") or "").upper() == sym_upper]
-        return filtered[:limit]
-    return all_signals[:limit]
+        signals_list = filtered[:limit]
+    else:
+        signals_list = all_signals[:limit]
+    
+    # Attach outcomes if requested
+    if include_outcomes:
+        try:
+            from core.outcome_tracker import load_outcomes
+            outcomes = load_outcomes()
+            for sig in signals_list:
+                sig_id = sig.get("signal_id")
+                if sig_id and sig_id in outcomes:
+                    sig["outcome"] = outcomes[sig_id].get("outcome", "PENDING")
+                    sig["outcome_data"] = outcomes[sig_id]
+                else:
+                    sig["outcome"] = "PENDING"
+        except Exception:
+            pass
+    
+    return signals_list
 
 
 @app.post("/api/signals")
@@ -780,6 +799,44 @@ def run_backtest(payload: dict = Body(...)):
             "days": days,
         },
     }
+
+
+# ============================================================================
+# SIGNAL OUTCOME TRACKING API
+# ============================================================================
+
+@app.get("/api/outcomes/stats", dependencies=[Depends(require_internal_key)])
+def get_outcomes_stats(days: int = Query(default=30, ge=1, le=365)):
+    """Get signal outcome statistics.
+    
+    Returns win/loss/pending counts and win rate.
+    """
+    from core.outcome_tracker import get_outcome_stats
+    
+    stats = get_outcome_stats(days=days)
+    return {"ok": True, "days": days, **stats}
+
+
+@app.get("/api/outcomes/{signal_id}", dependencies=[Depends(require_internal_key)])
+def get_signal_outcome_api(signal_id: str):
+    """Get outcome for a specific signal."""
+    from core.outcome_tracker import get_signal_outcome
+    
+    outcome = get_signal_outcome(signal_id)
+    if outcome:
+        return {"ok": True, "signal_id": signal_id, "outcome": outcome}
+    return {"ok": True, "signal_id": signal_id, "outcome": {"outcome": "PENDING"}}
+
+
+@app.post("/api/outcomes/check", dependencies=[Depends(require_internal_key)])
+def run_outcome_check_api():
+    """Manually trigger outcome check for all pending signals."""
+    from core.outcome_tracker import run_outcome_check
+    from market_data_cache import MarketDataCache
+    
+    cache = MarketDataCache()
+    result = run_outcome_check(cache)
+    return {"ok": True, **result}
 
 
 # ============================================================================

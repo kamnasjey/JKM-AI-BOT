@@ -741,6 +741,15 @@ class ScannerService:
                 id="scan_cycle",
                 replace_existing=True,
             )
+            
+            # Add outcome tracking job - runs every 5 minutes
+            self._scheduler.add_job(
+                self._check_outcomes,
+                trigger=IntervalTrigger(minutes=5),
+                id="outcome_check",
+                replace_existing=True,
+            )
+            
             self._scheduler.start()
             scheduler_ready = True
         except Exception as e:
@@ -806,6 +815,16 @@ class ScannerService:
             await self._scan_cycle()
         except Exception as e:
             log_kv_error(logger, "INGEST_TRIGGERED_SCAN_ERROR", error=str(e))
+
+    async def _check_outcomes(self):
+        """Background job to check SL/TP hits for pending signals."""
+        try:
+            from core.outcome_tracker import run_outcome_check
+            result = run_outcome_check(self.market_data_cache)
+            if result.get("updated", 0) > 0:
+                log_kv(logger, "OUTCOME_CHECK", checked=result["checked"], updated=result["updated"])
+        except Exception as e:
+            log_kv_error(logger, "OUTCOME_CHECK_ERROR", error=str(e))
 
     async def _scan_cycle(self):
         # Prevent concurrent scan cycles (from scheduler + ingest callback)
