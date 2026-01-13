@@ -742,10 +742,10 @@ class ScannerService:
                 replace_existing=True,
             )
             
-            # Add outcome tracking job - runs every 5 minutes
+            # Add outcome tracking job - runs every 1 hour
             self._scheduler.add_job(
                 self._check_outcomes,
-                trigger=IntervalTrigger(minutes=5),
+                trigger=IntervalTrigger(hours=1),
                 id="outcome_check",
                 replace_existing=True,
             )
