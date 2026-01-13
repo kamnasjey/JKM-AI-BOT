@@ -58,6 +58,20 @@ class TesterStorage:
             print(f"[TesterStorage] save error: {e}")
             return False
     
+    def save_simple(self, run_id: str, data: Dict[str, Any]) -> bool:
+        """Save a simple run result (for simplified API)."""
+        try:
+            path = self.base_dir / f"{run_id}.json"
+            data["created_at"] = datetime.now().isoformat()
+            
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=str)
+            
+            return True
+        except Exception as e:
+            print(f"[TesterStorage] save_simple error: {e}")
+            return False
+    
     def load(self, run_id: str) -> Optional[TesterRun]:
         """Load a test run from disk."""
         try:
