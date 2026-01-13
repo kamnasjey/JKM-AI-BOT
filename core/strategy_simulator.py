@@ -618,61 +618,29 @@ class StrategySimulator:
         return None
     
     def _build_primitives(self, candles: List[Candle]) -> Any:
-        """Build minimal primitives for detectors."""
-        from core.primitives import (
-            PrimitiveResults, SwingResult, SRZoneResult, 
-            TrendStructureResult, FibLevelResult
-        )
-        from core.engine_blocks import Direction
+        """Build primitives for detectors using the real compute_primitives."""
+        from core.primitives import compute_primitives
         
-        if len(candles) < 10:
+        if len(candles) < 20:
             return None
         
-        # Find recent high/low for SR
-        recent = candles[-20:] if len(candles) >= 20 else candles
-        highs = [c.high for c in recent]
-        lows = [c.low for c in recent]
-        
-        resistance = max(highs)
-        support = min(lows)
-        last_close = candles[-1].close
-        
-        # Simple trend detection
-        if len(candles) >= 10:
-            ma10 = sum(c.close for c in candles[-10:]) / 10
-            direction: Direction = "up" if last_close > ma10 else "down"
-        else:
-            direction = "flat"
-        
-        sr_zones = SRZoneResult(
-            support=support,
-            resistance=resistance,
-            last_close=last_close,
-        )
-        
-        swing = SwingResult(
-            swing=None,
-            direction=direction,
-            found=False,
-        )
-        
-        trend = TrendStructureResult(
-            direction=direction,
-            structure_valid=True,
-        )
-        
-        fib = FibLevelResult(
-            retrace={},
-            extensions={},
-            swing=None,
-        )
-        
-        return PrimitiveResults(
-            swing=swing,
-            sr_zones=sr_zones,
-            trend_structure=trend,
-            fib_levels=fib,
-        )
+        try:
+            # Use the same primitives as the production engine
+            primitives = compute_primitives(
+                trend_candles=candles,
+                entry_candles=candles,
+                trend_direction="flat",  # Will be inferred from structure
+                config={
+                    "fractal_left_bars": 3,  # Faster for simulation
+                    "fractal_right_bars": 3,
+                    "swing_lookback": min(80, len(candles) - 1),
+                    "sr_lookback": min(50, len(candles) - 1),
+                },
+            )
+            return primitives
+        except Exception:
+            # Fallback to None if primitives fail
+            return None
     
     def _calculate_summary(self) -> SimulatorSummary:
         """Calculate summary metrics from trades."""
