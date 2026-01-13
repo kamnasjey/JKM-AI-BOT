@@ -750,17 +750,47 @@ def run_backtest(payload: dict = Body(...)):
                 
                 status = str(obj.get("status") or "").upper()
                 
+                # Get SL/TP hit outcome from outcome tracker
+                entry = obj.get("entry")
+                sl = obj.get("sl")
+                tp = obj.get("tp")
+                direction = obj.get("direction")
+                
+                outcome = "PENDING"
+                outcome_data = None
+                
+                # Check if we have outcome stored
+                try:
+                    from core.outcome_tracker import get_signal_outcome
+                    stored_outcome = get_signal_outcome(obj.get("signal_id"))
+                    if stored_outcome:
+                        outcome = stored_outcome.get("outcome", "PENDING")
+                        outcome_data = stored_outcome
+                except Exception:
+                    pass
+                
                 matched_signals.append({
                     "signal_id": obj.get("signal_id"),
                     "symbol": sig_symbol,
                     "tf": obj.get("tf") or obj.get("timeframe"),
-                    "direction": obj.get("direction"),
+                    "direction": direction,
                     "status": status,
                     "rr": obj.get("rr"),
                     "created_at": sig_ts,
+                    "entry": entry,
+                    "sl": sl,
+                    "tp": tp,
+                    "outcome": outcome,
                 })
                 
                 by_symbol[sig_symbol]["total"] += 1
+                if outcome == "WIN":
+                    by_symbol[sig_symbol]["wins"] = by_symbol[sig_symbol].get("wins", 0) + 1
+                elif outcome == "LOSS":
+                    by_symbol[sig_symbol]["losses"] = by_symbol[sig_symbol].get("losses", 0) + 1
+                else:
+                    by_symbol[sig_symbol]["pending"] = by_symbol[sig_symbol].get("pending", 0) + 1
+                    
                 if status == "OK":
                     by_symbol[sig_symbol]["ok"] += 1
                 elif status == "NONE":
@@ -772,6 +802,17 @@ def run_backtest(payload: dict = Body(...)):
     ok_count = sum(1 for s in matched_signals if s.get("status") == "OK")
     none_count = sum(1 for s in matched_signals if s.get("status") == "NONE")
     
+    # Outcome-based stats (real win/loss from SL/TP hits)
+    wins = sum(1 for s in matched_signals if s.get("outcome") == "WIN")
+    losses = sum(1 for s in matched_signals if s.get("outcome") == "LOSS")
+    pending = sum(1 for s in matched_signals if s.get("outcome") == "PENDING")
+    
+    # Real win rate based on SL/TP hits
+    real_win_rate = None
+    decided = wins + losses
+    if decided > 0:
+        real_win_rate = round(wins / decided, 4)
+    
     hit_rate = None
     denom = ok_count + none_count
     if denom > 0:
@@ -782,7 +823,15 @@ def run_backtest(payload: dict = Body(...)):
     for sym, stats in by_symbol.items():
         d = stats["ok"] + stats["none"]
         hr = round(stats["ok"] / d, 4) if d > 0 else None
-        symbol_stats[sym] = {**stats, "hit_rate": hr}
+        sym_wins = stats.get("wins", 0)
+        sym_losses = stats.get("losses", 0)
+        sym_decided = sym_wins + sym_losses
+        sym_wr = round(sym_wins / sym_decided, 4) if sym_decided > 0 else None
+        symbol_stats[sym] = {
+            **stats, 
+            "hit_rate": hr,
+            "real_win_rate": sym_wr,
+        }
     
     return {
         "ok": True,
@@ -790,6 +839,10 @@ def run_backtest(payload: dict = Body(...)):
         "ok_count": ok_count,
         "none_count": none_count,
         "hit_rate": hit_rate,
+        "wins": wins,
+        "losses": losses,
+        "pending": pending,
+        "real_win_rate": real_win_rate,
         "by_symbol": symbol_stats,
         "signals_sample": matched_signals[:20],  # Return first 20 as sample
         "filters": {
@@ -830,13 +883,21 @@ def get_signal_outcome_api(signal_id: str):
 
 @app.post("/api/outcomes/check", dependencies=[Depends(require_internal_key)])
 def run_outcome_check_api():
-    """Manually trigger outcome check for all pending signals."""
-    from core.outcome_tracker import run_outcome_check
-    from market_data_cache import MarketDataCache
+    """Manually trigger outcome check for all pending signals.
     
-    cache = MarketDataCache()
-    result = run_outcome_check(cache)
-    return {"ok": True, **result}
+    Note: Uses the market_cache singleton. If cache is empty, loads from file.
+    """
+    from core.outcome_tracker import run_outcome_check, get_outcome_stats
+    from market_data_cache import market_cache
+    
+    result = run_outcome_check(market_cache)
+    stats = get_outcome_stats(days=30)
+    
+    return {
+        "ok": True, 
+        **result,
+        "stats": stats
+    }
 
 
 # ============================================================================

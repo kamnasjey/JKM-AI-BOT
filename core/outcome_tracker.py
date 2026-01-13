@@ -285,6 +285,16 @@ def run_outcome_check(market_data_cache: Any) -> Dict[str, Any]:
     if not pending:
         return {"checked": 0, "updated": 0}
     
+    # If cache is empty, try loading from file
+    cache_path = os.getenv("MARKET_CACHE_PATH", "state/market_cache.json")
+    try:
+        if not market_data_cache.get_all_symbols():
+            loaded = market_data_cache.load_json(cache_path)
+            if loaded:
+                logger.info(f"Loaded {loaded} symbols from {cache_path} for outcome check")
+    except Exception as e:
+        logger.warning(f"Failed to load cache for outcome check: {e}")
+    
     outcomes = load_outcomes()
     updated = 0
     
@@ -294,25 +304,50 @@ def run_outcome_check(market_data_cache: Any) -> Dict[str, Any]:
             continue
         
         try:
-            # Get current price from cache
-            candles = market_data_cache.get(symbol, "m5", limit=1)
+            # Get all candles from cache
+            candles = market_data_cache.get_candles(symbol)
             if not candles:
                 continue
             
-            latest = candles[-1]
-            current_price = latest.get("close")
-            high = latest.get("high")
-            low = latest.get("low")
+            sig_ts = sig.get("created_at", 0)
+            
+            # Find candles AFTER signal was created
+            candles_after = []
+            for c in candles:
+                # Handle both "time" (datetime) and "timestamp" (int) formats
+                c_time = c.get("time") or c.get("timestamp") or c.get("ts")
+                if isinstance(c_time, datetime):
+                    c_ts = int(c_time.timestamp())
+                elif isinstance(c_time, str):
+                    try:
+                        c_ts = int(datetime.fromisoformat(c_time.replace("Z", "+00:00")).timestamp())
+                    except:
+                        c_ts = 0
+                elif isinstance(c_time, (int, float)):
+                    c_ts = int(c_time)
+                else:
+                    c_ts = 0
+                if c_ts > sig_ts:
+                    candles_after.append(c)
+            
+            if not candles_after:
+                # No candles after signal, still pending
+                continue
+            
+            # Find HIGH and LOW since signal entry
+            high_since = max(c.get("high", 0) for c in candles_after)
+            low_since = min(c.get("low", float("inf")) for c in candles_after)
+            current_price = candles_after[-1].get("close")
             
             if current_price is None:
                 continue
             
-            # Check outcome
+            # Check outcome using high/low since entry
             result = check_signal_outcome(
                 sig,
                 current_price,
-                high_since_entry=high,
-                low_since_entry=low,
+                high_since_entry=high_since,
+                low_since_entry=low_since,
             )
             
             if result:
@@ -323,10 +358,13 @@ def run_outcome_check(market_data_cache: Any) -> Dict[str, Any]:
                 result["sl"] = sig.get("sl")
                 result["tp"] = sig.get("tp")
                 result["created_at"] = sig.get("created_at")
+                result["candles_checked"] = len(candles_after)
+                result["high_since"] = high_since
+                result["low_since"] = low_since
                 
                 outcomes[signal_id] = result
                 updated += 1
-                logger.info(f"Signal {signal_id} hit {result['outcome']} at {result['hit_price']}")
+                logger.info(f"Signal {signal_id} hit {result['outcome']} at {result['hit_price']} (high={high_since}, low={low_since})")
         
         except Exception as e:
             logger.warning(f"Failed to check outcome for {sig.get('signal_id')}: {e}")

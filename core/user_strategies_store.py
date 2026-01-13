@@ -92,13 +92,27 @@ def validate_normalize_user_strategies(
     return [dict(s) for s in (res.strategies or [])], [str(e) for e in (res.errors or [])]
 
 
+MAX_STRATEGIES_PER_USER = 30  # Maximum number of strategies a user can create
+
+
 def save_user_strategies(user_id: str, raw_items: Any) -> Dict[str, Any]:
     """Validate + atomically persist per-user strategies.
 
     Returns payload with {ok, warnings, user_id, schema_version, strategies}.
+    Max 30 strategies per user.
     """
 
     normalized, errors = validate_normalize_user_strategies(raw_items)
+    
+    # Enforce max strategies limit
+    if len(normalized) > MAX_STRATEGIES_PER_USER:
+        return {
+            "ok": False,
+            "error": f"Maximum {MAX_STRATEGIES_PER_USER} strategies allowed per user. You have {len(normalized)}.",
+            "user_id": str(user_id or "unknown"),
+            "strategies": [],
+            "warnings": errors,
+        }
 
     payload = {
         "schema_version": 1,

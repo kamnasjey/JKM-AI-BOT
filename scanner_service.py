@@ -820,7 +820,7 @@ class ScannerService:
         """Background job to check SL/TP hits for pending signals."""
         try:
             from core.outcome_tracker import run_outcome_check
-            result = run_outcome_check(self.market_data_cache)
+            result = run_outcome_check(market_cache)
             if result.get("updated", 0) > 0:
                 log_kv(logger, "OUTCOME_CHECK", checked=result["checked"], updated=result["updated"])
         except Exception as e:

@@ -262,6 +262,12 @@ class MarketDataCache:
         if not isinstance(raw, dict):
             return 0
 
+        # Handle both old format (flat) and new format ({"version": 1, "symbols": {...}})
+        if "symbols" in raw and isinstance(raw.get("symbols"), dict):
+            symbols_data = raw["symbols"]
+        else:
+            symbols_data = raw
+
         def _parse_time(v: Any) -> Optional[datetime]:
             if isinstance(v, datetime):
                 return v
@@ -282,7 +288,7 @@ class MarketDataCache:
             return dt.astimezone(timezone.utc)
 
         loaded = 0
-        for symbol, candles in raw.items():
+        for symbol, candles in symbols_data.items():
             if not isinstance(symbol, str) or not isinstance(candles, list):
                 continue
             parsed: List[Dict[str, Any]] = []
