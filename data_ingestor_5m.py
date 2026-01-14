@@ -17,6 +17,13 @@ from watchlist_union import get_union_watchlist
 
 from core.ingest_debug import log_ingest_event
 from core.marketdata_store import append as store_append
+from core.auto_backfill import (
+    AutoBackfiller,
+    get_backfiller,
+    is_backfill_enabled,
+    detect_gaps,
+    detect_tail_gap,
+)
 
 from data_providers.massive_provider import to_massive_ticker
 
@@ -47,6 +54,27 @@ class DataIngestor:
         self._running = False
         self._cooldown_until: dict[str, float] = {}
         self._on_cycle_complete = on_cycle_complete
+        
+        # Initialize auto-backfiller if enabled AND using real provider (MASSIVE)
+        self._backfiller: Optional[AutoBackfiller] = None
+        if is_backfill_enabled():
+            # Check if provider is MASSIVE (not simulation)
+            provider_name = str(getattr(provider, "name", "")).upper()
+            provider_class = type(provider).__name__.upper()
+            is_simulation = any(x in provider_name or x in provider_class 
+                               for x in ["SIMULATION", "FAKE", "MOCK", "FALLBACK"])
+            
+            massive_key = os.getenv("MASSIVE_API_KEY", "").strip()
+            
+            if is_simulation or not massive_key:
+                logger.warning(
+                    "AUTO_BACKFILL | status=disabled | reason=no_massive_api | "
+                    "provider=%s | message=Backfill requires MASSIVE API, not simulation",
+                    provider_name or provider_class
+                )
+            else:
+                self._backfiller = AutoBackfiller(provider, market_cache)
+                logger.info("AUTO_BACKFILL | status=enabled | config=%s", self._backfiller.config)
 
     async def run_forever(self):
         self._running = True
@@ -63,6 +91,21 @@ class DataIngestor:
                     await self._fetch_and_cache(sym)
                     # Small sleep to be nice to API
                     await self._sleep_interruptible(0.5)
+
+                # 2.3 Auto-backfill check (runs after initial fetch)
+                if self._backfiller:
+                    try:
+                        for sym in symbols:
+                            backfill_result = self._backfiller.check_and_backfill(sym)
+                            if backfill_result.get("gaps_filled", 0) > 0:
+                                logger.info(
+                                    f"AUTO_BACKFILL | symbol={sym} | "
+                                    f"gaps_filled={backfill_result['gaps_filled']} | "
+                                    f"candles_added={backfill_result['candles_added']}"
+                                )
+                            await self._sleep_interruptible(0.3)
+                    except Exception as e:
+                        logger.warning(f"Auto-backfill error: {e}")
 
                 # 2.5 Persist cache periodically (best-effort)
                 self._cycles += 1
