@@ -63,6 +63,13 @@ def _startup_scanner():
     import logging
     _log = logging.getLogger("api_server.startup")
 
+    # Enforce privacy mode - purge local user artifacts on startup
+    try:
+        from core.privacy import enforce_privacy_on_startup
+        enforce_privacy_on_startup(verbose=True)
+    except Exception as e:
+        _log.warning(f"Privacy enforcement failed: {e}")
+
     def _seed_owner_admin_strategy() -> None:
         """Seed a default strategy for the owner admin only.
 
@@ -73,6 +80,15 @@ def _startup_scanner():
         owner_user_id = (os.getenv("OWNER_ADMIN_USER_ID") or os.getenv("OWNER_USER_ID") or "").strip()
         if not owner_user_id:
             return
+
+        # In privacy mode, we avoid any sqlite-based lookup/seeding on the backend.
+        try:
+            from core.privacy import privacy_mode_enabled
+
+            if privacy_mode_enabled():
+                return
+        except Exception:
+            pass
 
         # Convenience: allow passing an email instead of a raw user_id.
         # This resolves to the backend's user_id stored in sqlite.

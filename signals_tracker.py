@@ -8,10 +8,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from core.privacy import privacy_mode_enabled
 from services.models import SignalEvent
 from services.dashboard_user_data_client import DashboardUserDataClient
 
 DB_PATH = os.getenv("USER_DB_PATH", "user_profiles.db")
+
+_PRIVACY_CONN: sqlite3.Connection | None = None
 
 
 def _signals_provider() -> str:
@@ -19,6 +22,13 @@ def _signals_provider() -> str:
 
 
 def _get_connection() -> sqlite3.Connection:
+    global _PRIVACY_CONN
+    if privacy_mode_enabled():
+        if _PRIVACY_CONN is None:
+            _PRIVACY_CONN = sqlite3.connect(":memory:")
+            _PRIVACY_CONN.row_factory = sqlite3.Row
+        return _PRIVACY_CONN
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -52,7 +62,8 @@ def init_signals_db() -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_user_status ON signals(user_id, status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_user_time ON signals(user_id, generated_at)")
     conn.commit()
-    conn.close()
+    if not privacy_mode_enabled():
+        conn.close()
 
 
 def _to_utc(dt: datetime) -> datetime:
@@ -97,6 +108,9 @@ def record_signal(
 ) -> Optional[int]:
     """Persist a signal only if it was actually sent to the user."""
     provider = _signals_provider()
+
+    if privacy_mode_enabled() and provider not in {"firebase", "dashboard"}:
+        return None
 
     generated_at = _dt_to_iso(getattr(signal, "generated_at", datetime.utcnow()))
     signal_key = _make_signal_key(
@@ -179,6 +193,8 @@ def record_signal(
 
 def list_pending_signals(user_id: str, limit: int = 200) -> List[Dict[str, Any]]:
     provider = _signals_provider()
+    if privacy_mode_enabled():
+        return []
     if provider in {"firebase", "dashboard"}:
         return []
 
@@ -207,6 +223,8 @@ def update_signal_resolution(
     resolved_price: Optional[float] = None,
 ) -> None:
     provider = _signals_provider()
+    if privacy_mode_enabled():
+        return
     if provider in {"firebase", "dashboard"}:
         return
 
@@ -228,6 +246,17 @@ def update_signal_resolution(
 
 def get_user_metrics(user_id: str) -> Dict[str, Any]:
     provider = _signals_provider()
+    if privacy_mode_enabled():
+        return {
+            "user_id": str(user_id),
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "expired": 0,
+            "total": 0,
+            "decided": 0,
+            "winrate": 0.0,
+        }
     if provider in {"firebase", "dashboard"}:
         return {
             "user_id": str(user_id),

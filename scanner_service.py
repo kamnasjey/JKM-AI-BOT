@@ -1529,6 +1529,14 @@ class ScannerService:
         except Exception:
             pass
         if not pairs:
+            # Dashboard-mode users may not have watch_pairs persisted anywhere yet.
+            # Fall back to global WATCH_PAIRS so engine can still produce signals.
+            try:
+                pairs = list(getattr(config, "WATCH_PAIRS", []) or [])
+            except Exception:
+                pairs = []
+
+        if not pairs:
             return 0
 
         # Strategy loader: never raises. Invalid config must not crash engine.

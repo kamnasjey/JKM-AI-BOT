@@ -16,6 +16,8 @@ import json
 import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
+
+from core.privacy import privacy_mode_enabled
 from user_db import (
     add_user,
     get_user,
@@ -67,6 +69,11 @@ def _strip_tz_token(raw: str) -> str:
     return re.sub(r"\s{2,}", " ", s).strip()
 
 def get_profile(user_id: int) -> Dict[str, Any]:
+    if privacy_mode_enabled():
+        prof = dict(DEFAULT_PROFILE)
+        prof["user_id"] = str(user_id)
+        return prof
+
     user = get_user(str(user_id))
     if not user:
         # Create default
@@ -169,6 +176,10 @@ def set_profile_from_text(user_id: int, text: str) -> str:
     """
     Apply parsed changes to the user's profile.
     """
+
+    if privacy_mode_enabled():
+        return "🔒 Privacy mode идэвхтэй: хэрэглэгчийн профайл хадгалах/шинэчлэх унтраалттай байна."
+
     account = get_account(str(user_id))
     is_admin = bool(account and account.get("is_admin"))
 

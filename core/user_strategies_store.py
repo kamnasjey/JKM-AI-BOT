@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.atomic_io import atomic_write_text
+from core.privacy import privacy_mode_enabled
 from strategies.loader import load_strategies_from_profile
 
 from services.dashboard_user_data_client import DashboardUserDataClient
@@ -50,9 +51,32 @@ def load_user_strategies(user_id: str) -> List[Dict[str, Any]]:
         if client:
             try:
                 remote = client.get_strategies(str(user_id))
-                return [dict(s) for s in remote if isinstance(s, dict)]
-            except Exception:
+                out = [dict(s) for s in remote if isinstance(s, dict)]
+                if out:
+                    return out
+
+                # If dashboard storage is enabled but user has no strategies yet,
+                # fall back to a safe built-in default (especially in privacy mode).
+                auto_default = str(os.getenv("AUTO_DEFAULT_STRATEGY", "") or "").strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
+                if privacy_mode_enabled() or auto_default:
+                    from core.default_strategies import get_default_user_strategies
+
+                    return get_default_user_strategies()
+
                 return []
+            except Exception:
+                # Resiliency: if dashboard fetch fails, fall back to local.
+                if privacy_mode_enabled():
+                    return []
+
+    if privacy_mode_enabled():
+        # In privacy mode we never read per-user local files.
+        return []
 
     path = user_strategies_path(user_id)
     try:
@@ -107,6 +131,25 @@ def validate_normalize_user_strategies(
 MAX_STRATEGIES_PER_USER = 30  # Maximum number of strategies a user can create
 
 
+def _save_user_strategies_local(user_id: str, normalized: List[Dict[str, Any]]) -> Dict[str, Any]:
+    payload = {
+        "schema_version": 1,
+        "user_id": str(user_id or "unknown"),
+        "updated_at": int(time.time()),
+        "strategies": normalized,
+    }
+
+    path = user_strategies_path(user_id)
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
+
+    return {
+        "ok": True,
+        "user_id": payload["user_id"],
+        "schema_version": payload["schema_version"],
+        "strategies": normalized,
+    }
+
+
 def save_user_strategies(user_id: str, raw_items: Any) -> Dict[str, Any]:
     """Validate + atomically persist per-user strategies.
 
@@ -127,43 +170,80 @@ def save_user_strategies(user_id: str, raw_items: Any) -> Dict[str, Any]:
         }
 
     provider = (os.getenv("USER_STRATEGIES_PROVIDER") or "").strip().lower()
-    if provider in {"firebase", "dashboard"}:
-        client = DashboardUserDataClient.from_env()
-        if client:
-            try:
-                client.put_strategies(str(user_id), normalized)
-            except Exception as exc:
-                return {
-                    "ok": False,
-                    "error": f"Saved locally but failed to sync to Firebase: {exc}",
-                    "user_id": str(user_id or "unknown"),
-                    "schema_version": 1,
-                    "strategies": normalized,
-                    "warnings": errors,
-                }
 
+    if privacy_mode_enabled() and provider not in {"firebase", "dashboard"}:
         return {
-            "ok": True,
+            "ok": False,
+            "error": "Privacy mode is enabled; local strategy storage is disabled. Set USER_STRATEGIES_PROVIDER=dashboard (or firebase).",
             "user_id": str(user_id or "unknown"),
-            "schema_version": 1,
-            "strategies": normalized,
+            "strategies": [],
             "warnings": errors,
+            "storage_provider": "disabled",
         }
 
-    payload = {
-        "schema_version": 1,
-        "user_id": str(user_id or "unknown"),
-        "updated_at": int(time.time()),
-        "strategies": normalized,
-    }
+    if provider in {"firebase", "dashboard"}:
+        client = DashboardUserDataClient.from_env()
+        if not client:
+            if privacy_mode_enabled():
+                return {
+                    "ok": False,
+                    "error": "USER_STRATEGIES_PROVIDER is dashboard/firebase, but DASHBOARD_USER_DATA_URL (or DASHBOARD_BASE_URL) / DASHBOARD_INTERNAL_API_KEY is missing.",
+                    "user_id": str(user_id or "unknown"),
+                    "strategies": [],
+                    "warnings": errors,
+                    "storage_provider": "dashboard",
+                    "synced_to_dashboard": False,
+                }
 
-    path = user_strategies_path(user_id)
-    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
+            local = _save_user_strategies_local(user_id, normalized)
+            local["warnings"] = errors
+            local["storage_provider"] = "local"
+            local["synced_to_dashboard"] = False
+            local["notice"] = "USER_STRATEGIES_PROVIDER is dashboard/firebase, but DASHBOARD_USER_DATA_URL (or DASHBOARD_BASE_URL) / DASHBOARD_INTERNAL_API_KEY is missing; saved locally."
+            return local
 
-    return {
-        "ok": True,
-        "user_id": payload["user_id"],
-        "schema_version": payload["schema_version"],
-        "strategies": normalized,
-        "warnings": errors,
-    }
+        try:
+            client.put_strategies(str(user_id), normalized)
+            return {
+                "ok": True,
+                "user_id": str(user_id or "unknown"),
+                "schema_version": 1,
+                "strategies": normalized,
+                "warnings": errors,
+                "storage_provider": "dashboard",
+                "synced_to_dashboard": True,
+            }
+        except Exception as exc:
+            if privacy_mode_enabled():
+                return {
+                    "ok": False,
+                    "error": f"Failed to sync strategies to dashboard: {exc}",
+                    "user_id": str(user_id or "unknown"),
+                    "strategies": [],
+                    "warnings": errors,
+                    "storage_provider": "dashboard",
+                    "synced_to_dashboard": False,
+                }
+
+            # Ensure user changes are not lost if the dashboard is temporarily down.
+            local = _save_user_strategies_local(user_id, normalized)
+            local["warnings"] = errors
+            local["storage_provider"] = "local"
+            local["synced_to_dashboard"] = False
+            local["error"] = f"Failed to sync strategies to dashboard: {exc}"
+            return local
+
+    if privacy_mode_enabled():
+        return {
+            "ok": False,
+            "error": "Privacy mode is enabled; local strategy storage is disabled.",
+            "user_id": str(user_id or "unknown"),
+            "strategies": [],
+            "warnings": errors,
+            "storage_provider": "disabled",
+        }
+
+    local = _save_user_strategies_local(user_id, normalized)
+    local["warnings"] = errors
+    local["storage_provider"] = "local"
+    return local

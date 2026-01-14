@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./ganbayar_trading_bot
+    image: jkm-ai-bot-backend
+    container_name: jkm_bot_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./state:/app/state
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Ulaanbaatar

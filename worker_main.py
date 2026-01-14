@@ -45,6 +45,10 @@ def _log_kv(event: str, **kv: Any) -> None:
 def main() -> None:
     """Main worker loop."""
     
+    # Enforce privacy mode on startup (purge local user artifacts)
+    from core.privacy import enforce_privacy_on_startup
+    enforce_privacy_on_startup(verbose=True)
+    
     # Config
     poll_interval = float(os.getenv("WORKER_POLL_INTERVAL_S", "2"))
     batch_size = int(os.getenv("WORKER_BATCH_SIZE", "50"))

@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core.privacy import privacy_mode_enabled
+
 logger = logging.getLogger("core.event_queue")
 
 # ---------------------------------------------------------------------------
@@ -25,6 +27,7 @@ logger = logging.getLogger("core.event_queue")
 # ---------------------------------------------------------------------------
 _DB_PATH: Optional[Path] = None
 _LOCK = threading.Lock()
+_PRIVACY_CONN: sqlite3.Connection | None = None
 
 def _get_db_path() -> Path:
     global _DB_PATH
@@ -37,6 +40,19 @@ def _get_db_path() -> Path:
 
 
 def _get_conn() -> sqlite3.Connection:
+    global _PRIVACY_CONN
+    if privacy_mode_enabled():
+        # Shared in-memory database so we don't write user-related data to disk.
+        if _PRIVACY_CONN is None:
+            _PRIVACY_CONN = sqlite3.connect(
+                "file:jkm_event_queue?mode=memory&cache=shared",
+                uri=True,
+                timeout=30.0,
+                check_same_thread=False,
+            )
+            _PRIVACY_CONN.row_factory = sqlite3.Row
+        return _PRIVACY_CONN
+
     conn = sqlite3.connect(str(_get_db_path()), timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=30000;")
@@ -102,7 +118,8 @@ def init_db() -> None:
             conn.commit()
             logger.info("event_queue: DB initialized at %s", _get_db_path())
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +170,8 @@ def enqueue_event(
             conn.commit()
             return event_id
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("enqueue_event failed: %s", type(e).__name__)
         return None
@@ -213,7 +231,8 @@ def claim_events(limit: int = 50, lock_s: int = 60) -> List[QueueEvent]:
                 )
                 conn.commit()
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("claim_events failed: %s", type(e).__name__)
     
@@ -229,7 +248,8 @@ def mark_done(event_id: str) -> bool:
             conn.commit()
             return True
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("mark_done failed: %s", type(e).__name__)
         return False
@@ -250,7 +270,8 @@ def mark_failed(event_id: str, retry_after_s: int = 60) -> bool:
             conn.commit()
             return True
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("mark_failed failed: %s", type(e).__name__)
         return False
@@ -267,7 +288,8 @@ def get_queue_stats() -> Dict[str, int]:
                 stats[row["status"]] = row["cnt"]
                 stats["total"] += row["cnt"]
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception:
         pass
     return stats
@@ -293,7 +315,8 @@ def delivery_recent(user_id: str, setup_key: str, now_ts: Optional[int] = None) 
                 return True
             return False
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception:
         return False
 
@@ -316,7 +339,8 @@ def record_delivery(user_id: str, setup_key: str, now_ts: Optional[int] = None, 
             conn.commit()
             return True
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("record_delivery failed: %s", type(e).__name__)
         return False
@@ -333,7 +357,8 @@ def cleanup_old_deliveries(older_than_days: int = 7) -> int:
             deleted = cursor.rowcount
             conn.commit()
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception:
         pass
     return deleted
@@ -358,7 +383,8 @@ def create_connect_token(user_id: str, expires_in_s: int = 1800) -> Optional[str
             conn.commit()
             return token
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("create_connect_token failed: %s", type(e).__name__)
         return None
@@ -390,7 +416,8 @@ def validate_connect_token(token: str) -> Optional[str]:
             
             return row["user_id"]
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception as e:
         logger.error("validate_connect_token failed: %s", type(e).__name__)
         return None
@@ -407,7 +434,8 @@ def cleanup_old_tokens(older_than_days: int = 7) -> int:
             deleted = cursor.rowcount
             conn.commit()
         finally:
-            conn.close()
+            if not privacy_mode_enabled():
+                conn.close()
     except Exception:
         pass
     return deleted

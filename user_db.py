@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from core.privacy import privacy_mode_enabled
 from config import (
     DEFAULT_ADMIN_EMAIL,
     DEFAULT_ADMIN_NAME,
@@ -22,8 +23,17 @@ DB_PATH = os.getenv("USER_DB_PATH", "user_profiles.db")
 PBKDF2_ITERATIONS = 320_000
 EMAIL_VERIFY_TTL_HOURS = 24
 
+_PRIVACY_CONN: sqlite3.Connection | None = None
+
 
 def _get_connection() -> sqlite3.Connection:
+    global _PRIVACY_CONN
+    if privacy_mode_enabled():
+        if _PRIVACY_CONN is None:
+            _PRIVACY_CONN = sqlite3.connect(":memory:")
+            _PRIVACY_CONN.row_factory = sqlite3.Row
+        return _PRIVACY_CONN
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -475,6 +485,13 @@ def list_users() -> List[Dict[str, Any]]:
             client = DashboardUserDataClient.from_env()
             if client:
                 users = client.list_active_users()
+                try:
+                    import config as _cfg
+
+                    default_pairs = list(getattr(_cfg, "WATCH_PAIRS", []) or [])
+                except Exception:
+                    default_pairs = []
+
                 out: List[Dict[str, Any]] = []
                 for u in users:
                     if not isinstance(u, dict):
@@ -491,6 +508,8 @@ def list_users() -> List[Dict[str, Any]]:
                         "telegram_enabled": u.get("telegram_enabled"),
                         "scan_enabled": u.get("scan_enabled"),
                         "plan": u.get("plan"),
+                        # Ensure engine has a non-empty universe in dashboard mode.
+                        "watch_pairs": list(default_pairs),
                     })
                 return out
         except Exception:

@@ -9,7 +9,33 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+from core.privacy import privacy_mode_enabled
+
+
 _LOCK = threading.Lock()
+
+_REDACT_KEYS_EXACT = {
+    "user_profile",
+    "profile",
+    "email",
+    "telegram",
+    "telegram_handle",
+    "telegram_chat_id",
+    "api_key",
+    "internal_api_key",
+    "password",
+    "password_hash",
+    "token",
+    "secret",
+    "user_id",
+}
+
+
+def _should_redact_key(key: str) -> bool:
+    k = _safe_str(key).lower()
+    if k in _REDACT_KEYS_EXACT:
+        return True
+    return any(x in k for x in ("token", "secret", "password", "api_key", "internal_api_key"))
 
 
 def _safe_str(v: Any) -> str:
@@ -27,7 +53,11 @@ def _safe_jsonable(obj: Any, *, depth: int = 0, max_depth: int = 4, max_list: in
     if isinstance(obj, dict):
         out: Dict[str, Any] = {}
         for k, v in list(obj.items())[: int(max_list)]:
-            out[_safe_str(k)] = _safe_jsonable(v, depth=depth + 1, max_depth=max_depth, max_list=max_list)
+            ks = _safe_str(k)
+            if _should_redact_key(ks):
+                out[ks] = "REDACTED"
+            else:
+                out[ks] = _safe_jsonable(v, depth=depth + 1, max_depth=max_depth, max_list=max_list)
         return out
 
     if isinstance(obj, (list, tuple)):
@@ -72,6 +102,8 @@ def emit_plugin_event(
     path: str = "state/plugin_events.jsonl",
 ) -> None:
     """Append one plugin event JSONL line. Non-fatal by design."""
+    if privacy_mode_enabled():
+        return
     try:
         from core.atomic_io import atomic_append_jsonl_via_replace
 
