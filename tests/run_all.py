@@ -103,6 +103,14 @@ def check_cache_memoization() -> CheckResult:
             if calls["n"] != 1:
                 return _fail(name, f"Expected 1 resample call, got {calls['n']}")
 
+            # Revise an existing candle (same timestamp) → should invalidate and recompute.
+            revised = [dict(candles[-1])]
+            revised[0]["close"] = float(revised[0]["close"]) + 0.0005
+            cache.upsert_candles(sym, revised)
+            _ = cache.get_resampled(sym, "H1")
+            if calls["n"] != 2:
+                return _fail(name, f"Expected 2 resample calls after revised candle, got {calls['n']}")
+
             # Upsert a newer candle → should invalidate and recompute.
             newer = _make_m5_candles(
                 count=1,
@@ -112,8 +120,8 @@ def check_cache_memoization() -> CheckResult:
             )
             cache.upsert_candles(sym, newer)
             _ = cache.get_resampled(sym, "H1")
-            if calls["n"] != 2:
-                return _fail(name, f"Expected 2 resample calls after new candle, got {calls['n']}")
+            if calls["n"] != 3:
+                return _fail(name, f"Expected 3 resample calls after new candle, got {calls['n']}")
 
             return _ok(name)
         finally:

@@ -1,0 +1,56 @@
+name: Deploy VPS
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to VPS (Docker Compose)
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Add VPS to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+        run: |
+          set -euo pipefail
+
+          echo "Deploying to ${VPS_USER}@${VPS_HOST}:${VPS_APP_DIR}"
+
+          ssh -o BatchMode=yes "${VPS_USER}@${VPS_HOST}" "set -euo pipefail;
+            cd '${VPS_APP_DIR}';
+            git fetch --all --prune;
+            git reset --hard origin/main;
+            docker compose pull --ignore-pull-failures;
+            docker compose up -d --build;
+            docker compose ps;"
+
+      - name: Smoke check (health)
+        if: ${{ always() }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set +e
+          ssh -o BatchMode=yes "${VPS_USER}@${VPS_HOST}" "curl -fsS http://127.0.0.1:8000/health | head" || true

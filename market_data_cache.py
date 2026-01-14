@@ -1,12 +1,10 @@
 # market_data_cache.py
 import threading
 import time
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import json
-import os
 
 from core.atomic_io import atomic_write_text
 
@@ -20,6 +18,7 @@ class MarketDataCache:
     def __init__(self, max_len: int = 5000):
         self._cache: Dict[str, List[Dict[str, Any]]] = {}
         self._tf_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}  # (symbol, tf) -> {"last_ts": ..., "candles": ...}
+        self._rev: Dict[str, int] = {}  # per-symbol revision, bumps when any candle changes
         self._lock = threading.RLock()
         self._max_len = max_len
         self._stats: Dict[str, int] = {
@@ -48,36 +47,125 @@ class MarketDataCache:
         if not candles:
             return
 
+        def _to_utc_dt(v: Any) -> Optional[datetime]:
+            if v is None:
+                return None
+            if isinstance(v, datetime):
+                if v.tzinfo is None:
+                    v = v.replace(tzinfo=timezone.utc)
+                return v.astimezone(timezone.utc)
+            if isinstance(v, str):
+                s = v.strip()
+                if not s:
+                    return None
+                if s.endswith("Z"):
+                    s = s[:-1] + "+00:00"
+                try:
+                    dt = datetime.fromisoformat(s)
+                except Exception:
+                    return None
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            if isinstance(v, (int, float)):
+                # epoch seconds or ms
+                try:
+                    ts = float(v)
+                except Exception:
+                    return None
+                if ts > 1e12:
+                    ts = ts / 1000.0
+                try:
+                    return datetime.fromtimestamp(ts, tz=timezone.utc)
+                except Exception:
+                    return None
+            return None
+
+        def _canon(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            if not isinstance(c, dict):
+                return None
+            ts = _to_utc_dt(c.get("time"))
+            if ts is None:
+                return None
+            try:
+                o = float(c.get("open"))
+                h = float(c.get("high"))
+                l = float(c.get("low"))
+                cl = float(c.get("close"))
+            except Exception:
+                return None
+            out: Dict[str, Any] = {
+                "time": ts,
+                "open": float(o),
+                "high": float(h),
+                "low": float(l),
+                "close": float(cl),
+            }
+            if c.get("volume") is not None:
+                try:
+                    out["volume"] = float(c.get("volume"))
+                except Exception:
+                    pass
+            return out
+
+        def _same(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+            keys = ("open", "high", "low", "close")
+            for k in keys:
+                if float(a.get(k)) != float(b.get(k)):
+                    return False
+            va = a.get("volume")
+            vb = b.get("volume")
+            if va is None and vb is None:
+                return True
+            if va is None or vb is None:
+                return False
+            return float(va) == float(vb)
+
         with self._lock:
             sym = symbol.upper()
             current = self._cache.get(sym, [])
             prev_last_ts = current[-1]["time"] if current else None
-            
-            # Create a dict for easy lookup/update by time
-            # Assuming 'time' is datetime object
-            data_map = {c['time']: c for c in current}
-            
-            for c in candles:
-                # Ensure time is present
-                if 'time' not in c:
+
+            data_map: Dict[datetime, Dict[str, Any]] = {}
+            changed = False
+
+            # Canonicalize existing cache entries.
+            for existing in current:
+                cc = _canon(existing)
+                if cc is None:
+                    changed = True
                     continue
-                data_map[c['time']] = c
-                
-            # Convert back to list and sort
-            merged = sorted(data_map.values(), key=lambda x: x['time'])
-            
-            # Trim to max_len
+                # If coercion changes tz awareness or merges duplicates, treat as change.
+                prev = data_map.get(cc["time"])
+                if prev is not None and not _same(prev, cc):
+                    changed = True
+                data_map[cc["time"]] = cc
+
+            # Merge incoming candles.
+            for incoming in candles:
+                cc = _canon(incoming)
+                if cc is None:
+                    continue
+                prev = data_map.get(cc["time"])
+                if prev is None:
+                    changed = True
+                elif not _same(prev, cc):
+                    changed = True
+                data_map[cc["time"]] = cc
+
+            merged = sorted(data_map.values(), key=lambda x: x["time"])
             if len(merged) > self._max_len:
                 merged = merged[-self._max_len:]
-                
+
             self._cache[sym] = merged
 
-            # Invalidate resampled cache ONLY if we appended newer data.
-            # (Spec requirement: invalidate per symbol whenever upsert adds newer last timestamp.)
             new_last_ts = merged[-1]["time"] if merged else None
-            if prev_last_ts is None:
-                self._invalidate_tf_cache(sym)
-            elif new_last_ts is not None and new_last_ts > prev_last_ts:
+            newer_appended = (
+                prev_last_ts is None
+                or (new_last_ts is not None and prev_last_ts is not None and new_last_ts > prev_last_ts)
+            )
+            if changed or newer_appended:
+                self._rev[sym] = int(self._rev.get(sym, 0)) + 1
                 self._invalidate_tf_cache(sym)
 
     def get_candles(self, symbol: str) -> List[Dict[str, Any]]:
@@ -175,7 +263,12 @@ class MarketDataCache:
             
             # Check cache validity
             cached_entry = self._tf_cache.get(cache_key)
-            if cached_entry and cached_entry.get('last_ts') == last_m5_ts:
+            cur_rev = int(self._rev.get(symbol.upper(), 0))
+            if (
+                cached_entry
+                and cached_entry.get("last_ts") == last_m5_ts
+                and int(cached_entry.get("rev", -1)) == cur_rev
+            ):
                 # Cache is valid, return cached data
                 self._stats["resample_hit"] += 1
                 out = list(cached_entry["candles"])
@@ -198,8 +291,9 @@ class MarketDataCache:
             
             # Update cache
             self._tf_cache[cache_key] = {
-                'last_ts': last_m5_ts,
-                'candles': resampled,
+                "last_ts": last_m5_ts,
+                "rev": cur_rev,
+                "candles": resampled,
             }
             
             out = list(resampled)
@@ -316,93 +410,6 @@ class MarketDataCache:
                 self.upsert_candles(symbol.upper(), parsed)
                 loaded += 1
         return loaded
-
-    def save_json(self, path: str) -> None:
-        """Persist the entire cache to a JSON file.
-
-        Times are stored as ISO8601 strings.
-        """
-        with self._lock:
-            payload: Dict[str, Any] = {
-                "version": 1,
-                "symbols": {},
-            }
-            for sym, candles in self._cache.items():
-                out: List[Dict[str, Any]] = []
-                for c in candles:
-                    t = c.get("time")
-                    if isinstance(t, datetime):
-                        t_str = t.astimezone(timezone.utc).isoformat()
-                    else:
-                        t_str = str(t)
-                    out.append({
-                        "time": t_str,
-                        "open": c.get("open"),
-                        "high": c.get("high"),
-                        "low": c.get("low"),
-                        "close": c.get("close"),
-                        "volume": c.get("volume"),
-                    })
-                payload["symbols"][sym] = out
-
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
-        os.replace(tmp, path)
-
-    def load_json(self, path: str) -> None:
-        """Load cache from a JSON file created by save_json()."""
-        if not os.path.exists(path):
-            return
-
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-
-        symbols = payload.get("symbols") if isinstance(payload, dict) else None
-        if not isinstance(symbols, dict):
-            return
-
-        loaded: Dict[str, List[Dict[str, Any]]] = {}
-        for sym, items in symbols.items():
-            if not isinstance(sym, str) or not isinstance(items, list):
-                continue
-            candles: List[Dict[str, Any]] = []
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                t_raw = item.get("time")
-                try:
-                    if isinstance(t_raw, str):
-                        # fromisoformat supports offsets; ensure tz-aware
-                        t = datetime.fromisoformat(t_raw)
-                        if t.tzinfo is None:
-                            t = t.replace(tzinfo=timezone.utc)
-                        else:
-                            t = t.astimezone(timezone.utc)
-                    else:
-                        continue
-                except Exception:
-                    continue
-                try:
-                    candles.append({
-                        "time": t,
-                        "open": float(item.get("open")),
-                        "high": float(item.get("high")),
-                        "low": float(item.get("low")),
-                        "close": float(item.get("close")),
-                        **({"volume": float(item.get("volume"))} if item.get("volume") is not None else {}),
-                    })
-                except Exception:
-                    continue
-
-            candles = sorted(candles, key=lambda x: x["time"])
-            if len(candles) > self._max_len:
-                candles = candles[-self._max_len:]
-            loaded[sym.upper()] = candles
-
-        with self._lock:
-            self._cache = loaded
 
 # Global Singleton Instance
 market_cache = MarketDataCache()

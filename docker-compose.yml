@@ -14,8 +14,6 @@ services:
       - ./config:/app/config
       # Logs
       - ./logs:/app/logs
-      # User profiles database
-      - ./user_profiles.db:/app/user_profiles.db
     environment:
       - TZ=UTC
       # INTERNAL_API_KEY is read from .env via env_file
