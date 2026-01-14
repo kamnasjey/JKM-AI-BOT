@@ -483,7 +483,8 @@ def list_users() -> List[Dict[str, Any]]:
                     uid = str(u.get("user_id") or "").strip()
                     if not uid:
                         continue
-                    out.append({
+
+                    user_data: Dict[str, Any] = {
                         "user_id": uid,
                         "name": u.get("name"),
                         "email": u.get("email"),
@@ -491,7 +492,27 @@ def list_users() -> List[Dict[str, Any]]:
                         "telegram_enabled": u.get("telegram_enabled"),
                         "scan_enabled": u.get("scan_enabled"),
                         "plan": u.get("plan"),
-                    })
+                    }
+
+                    # Fetch strategies and prefs from Dashboard
+                    try:
+                        strategies = client.get_strategies(uid)
+                        if strategies:
+                            user_data["strategies"] = strategies
+                    except Exception:
+                        pass
+
+                    try:
+                        prefs = client.get_user_prefs(uid)
+                        if prefs:
+                            # Merge prefs into user_data (watch_pairs, min_rr, etc.)
+                            for k, v in prefs.items():
+                                if k not in user_data or user_data[k] is None:
+                                    user_data[k] = v
+                    except Exception:
+                        pass
+
+                    out.append(user_data)
                 return out
         except Exception:
             # Fall back to local DB.
