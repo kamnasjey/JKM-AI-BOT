@@ -257,6 +257,16 @@ def set_profile_from_text(user_id: int, text: str) -> str:
     # Merge into compiled_profile (keep any extra keys)
     compiled_profile.update(updated_profile.model_dump())
 
+    # Plan enforcement: clamp watch_pairs by plan max.
+    try:
+        from core.plans import clamp_pairs, effective_max_pairs, validate_pairs
+
+        max_pairs = int(effective_max_pairs(compiled_profile))
+        ok, err = validate_pairs(compiled_profile.get("watch_pairs"), max_pairs)
+        compiled_profile["watch_pairs"] = clamp_pairs(compiled_profile.get("watch_pairs"), max_pairs)
+    except Exception:
+        ok, err = True, ""
+
     name = compiled_profile.get("name") or (account.get("name") if account else None) or f"User {user_id}"
     add_user(str(user_id), str(name), compiled_profile)
     set_last_str_update_at(str(user_id), now)
@@ -268,6 +278,9 @@ def set_profile_from_text(user_id: int, text: str) -> str:
     if "trend_tf" in updates: msg_lines.append(f"- Trend TF: {updated_profile.trend_tf}")
     if "entry_tf" in updates: msg_lines.append(f"- Entry TF: {updated_profile.entry_tf}")
     if "watch_pairs" in updates: msg_lines.append(f"- Watch: {updated_profile.watch_pairs}")
+
+    if not ok and err:
+        msg_lines.append(f"\n⚠️ {err} (Plan limit applied)")
 
     if len(msg_lines) == 1:
         return "✅ Note saved (No settings detected. Use 'Risk=1' etc format)."

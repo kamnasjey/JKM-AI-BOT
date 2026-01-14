@@ -148,7 +148,23 @@ def create_account(
 
     init_db()
     conn = _get_connection()
-    profile_json = json.dumps(profile or {})
+    prof = dict(profile or {})
+    try:
+        from core.plans import normalize_plan_id
+
+        if "plan" not in prof or not str(prof.get("plan") or "").strip():
+            prof["plan"] = "free"
+        else:
+            prof["plan"] = normalize_plan_id(prof.get("plan"))
+
+        if "plan_status" not in prof or not str(prof.get("plan_status") or "").strip():
+            prof["plan_status"] = "active"
+    except Exception:
+        # Never block account creation due to plan helpers.
+        prof.setdefault("plan", "free")
+        prof.setdefault("plan_status", "active")
+
+    profile_json = json.dumps(prof)
     hashed = _hash_password(password)
     assigned_id = user_id or uuid4().hex
     now = datetime.utcnow().isoformat()
@@ -388,6 +404,57 @@ def add_user(user_id: str, name: str, profile: Dict[str, Any]):
     conn.close()
 
 
+def set_user_plan(
+    *,
+    user_id: str,
+    plan_id: str,
+    plan_status: str = "active",
+    stripe_customer_id: Optional[str] = None,
+    stripe_subscription_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update a user's plan in their stored profile JSON.
+
+    We keep this inside the profile_json for minimal migrations.
+    Also clamps watch_pairs to plan max to ensure server-side enforcement.
+    """
+
+    init_db()
+    account = get_account(str(user_id))
+    if not account:
+        # Create minimal record if missing.
+        add_user(str(user_id), f"User {user_id}", {"user_id": str(user_id)})
+        account = get_account(str(user_id))
+
+    prof = get_user(str(user_id)) or {}
+    if not isinstance(prof, dict):
+        prof = {}
+
+    from core.plans import clamp_pairs, normalize_plan_id, plan_max_pairs
+
+    pid = normalize_plan_id(plan_id)
+    prof["plan"] = pid
+    prof["plan_status"] = str(plan_status or "active")
+
+    if stripe_customer_id is not None:
+        prof["stripe_customer_id"] = str(stripe_customer_id)
+    if stripe_subscription_id is not None:
+        prof["stripe_subscription_id"] = str(stripe_subscription_id)
+
+    max_pairs = int(plan_max_pairs(pid))
+    prof["watch_pairs"] = clamp_pairs(prof.get("watch_pairs"), max_pairs)
+
+    # Preserve display name.
+    name = (
+        prof.get("name")
+        or (account.get("name") if isinstance(account, dict) else None)
+        or f"User {user_id}"
+    )
+    prof["name"] = name
+
+    add_user(str(user_id), str(name), prof)
+    return get_user(str(user_id)) or prof
+
+
 def get_user(user_id: str) -> Optional[Dict[str, Any]]:
     account = get_account(user_id)
     if not account:
@@ -400,6 +467,36 @@ def get_user(user_id: str) -> Optional[Dict[str, Any]]:
 
 
 def list_users() -> List[Dict[str, Any]]:
+    provider = (os.getenv("USER_ACCOUNTS_PROVIDER") or "").strip().lower()
+    if provider in {"dashboard", "firebase"}:
+        try:
+            from services.dashboard_user_data_client import DashboardUserDataClient
+
+            client = DashboardUserDataClient.from_env()
+            if client:
+                users = client.list_active_users()
+                out: List[Dict[str, Any]] = []
+                for u in users:
+                    if not isinstance(u, dict):
+                        continue
+                    # Keep compatibility with existing caller expectations.
+                    uid = str(u.get("user_id") or "").strip()
+                    if not uid:
+                        continue
+                    out.append({
+                        "user_id": uid,
+                        "name": u.get("name"),
+                        "email": u.get("email"),
+                        "telegram_chat_id": u.get("telegram_chat_id"),
+                        "telegram_enabled": u.get("telegram_enabled"),
+                        "scan_enabled": u.get("scan_enabled"),
+                        "plan": u.get("plan"),
+                    })
+                return out
+        except Exception:
+            # Fall back to local DB.
+            pass
+
     conn = _get_connection()
     rows = conn.execute("SELECT * FROM users").fetchall()
     conn.close()
@@ -531,8 +628,29 @@ def set_last_str_update_day(user_id: str, day: str) -> None:
 # ---------------------------------------------------------------------------
 def set_telegram_chat(user_id: str, chat_id: str) -> bool:
     """Bind a Telegram chat_id to a user."""
-    init_db()
+    provider = (os.getenv("USER_TELEGRAM_PROVIDER") or os.getenv("USER_ACCOUNTS_PROVIDER") or "").strip().lower()
     now_ts = int(datetime.utcnow().timestamp())
+
+    # Canonical write (Firestore via dashboard) if enabled.
+    if provider in {"dashboard", "firebase"}:
+        try:
+            from services.dashboard_user_data_client import DashboardUserDataClient
+
+            client = DashboardUserDataClient.from_env()
+            if client:
+                client.put_user_prefs(
+                    str(user_id),
+                    {
+                        "telegram_chat_id": str(chat_id),
+                        "telegram_connected_ts": now_ts,
+                        "telegram_enabled": True,
+                    },
+                )
+                # Also keep local cache best-effort.
+        except Exception:
+            pass
+
+    init_db()
     conn = _get_connection()
     try:
         conn.execute(
@@ -549,6 +667,20 @@ def set_telegram_chat(user_id: str, chat_id: str) -> bool:
 
 def get_telegram_chat(user_id: str) -> Optional[str]:
     """Get Telegram chat_id for a user."""
+    provider = (os.getenv("USER_TELEGRAM_PROVIDER") or os.getenv("USER_ACCOUNTS_PROVIDER") or "").strip().lower()
+    if provider in {"dashboard", "firebase"}:
+        try:
+            from services.dashboard_user_data_client import DashboardUserDataClient
+
+            client = DashboardUserDataClient.from_env()
+            if client:
+                prefs = client.get_user_prefs(str(user_id))
+                chat = prefs.get("telegram_chat_id")
+                if chat:
+                    return str(chat)
+        except Exception:
+            pass
+
     conn = _get_connection()
     row = conn.execute(
         "SELECT telegram_chat_id FROM users WHERE user_id=?",
@@ -562,6 +694,17 @@ def get_telegram_chat(user_id: str) -> Optional[str]:
 
 def set_telegram_enabled(user_id: str, enabled: bool) -> bool:
     """Enable/disable Telegram notifications for a user."""
+    provider = (os.getenv("USER_TELEGRAM_PROVIDER") or os.getenv("USER_ACCOUNTS_PROVIDER") or "").strip().lower()
+    if provider in {"dashboard", "firebase"}:
+        try:
+            from services.dashboard_user_data_client import DashboardUserDataClient
+
+            client = DashboardUserDataClient.from_env()
+            if client:
+                client.put_user_prefs(str(user_id), {"telegram_enabled": bool(enabled)})
+        except Exception:
+            pass
+
     init_db()
     conn = _get_connection()
     try:
@@ -579,6 +722,19 @@ def set_telegram_enabled(user_id: str, enabled: bool) -> bool:
 
 def get_telegram_enabled(user_id: str) -> bool:
     """Check if Telegram notifications are enabled for a user."""
+    provider = (os.getenv("USER_TELEGRAM_PROVIDER") or os.getenv("USER_ACCOUNTS_PROVIDER") or "").strip().lower()
+    if provider in {"dashboard", "firebase"}:
+        try:
+            from services.dashboard_user_data_client import DashboardUserDataClient
+
+            client = DashboardUserDataClient.from_env()
+            if client:
+                prefs = client.get_user_prefs(str(user_id))
+                if "telegram_enabled" in prefs:
+                    return bool(prefs.get("telegram_enabled"))
+        except Exception:
+            pass
+
     conn = _get_connection()
     row = conn.execute(
         "SELECT telegram_enabled FROM users WHERE user_id=?",
@@ -593,6 +749,27 @@ def get_telegram_enabled(user_id: str) -> bool:
 
 def list_users_with_telegram() -> List[Dict[str, Any]]:
     """List all users who have connected Telegram and have it enabled."""
+    provider = (os.getenv("USER_TELEGRAM_PROVIDER") or os.getenv("USER_ACCOUNTS_PROVIDER") or "").strip().lower()
+    if provider in {"dashboard", "firebase"}:
+        try:
+            from services.dashboard_user_data_client import DashboardUserDataClient
+
+            client = DashboardUserDataClient.from_env()
+            if client:
+                users = client.list_active_users()
+                out: List[Dict[str, Any]] = []
+                for u in users:
+                    if not isinstance(u, dict):
+                        continue
+                    uid = str(u.get("user_id") or "").strip()
+                    chat = u.get("telegram_chat_id")
+                    enabled = u.get("telegram_enabled")
+                    if uid and chat and (enabled is None or bool(enabled)):
+                        out.append({"user_id": uid, "chat_id": str(chat)})
+                return out
+        except Exception:
+            pass
+
     conn = _get_connection()
     rows = conn.execute(
         "SELECT user_id, telegram_chat_id, telegram_enabled FROM users WHERE telegram_chat_id IS NOT NULL AND telegram_enabled=1"

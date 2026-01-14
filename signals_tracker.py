@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from services.models import SignalEvent
+from services.dashboard_user_data_client import DashboardUserDataClient
 
 DB_PATH = os.getenv("USER_DB_PATH", "user_profiles.db")
 
@@ -134,6 +135,34 @@ def record_signal(
         )
         conn.commit()
         row = conn.execute("SELECT id FROM signals WHERE signal_key=?", (signal_key,)).fetchone()
+
+        # Optional: mirror into Firebase (via dashboard internal API) for user-centric history.
+        provider = (os.getenv("USER_SIGNALS_PROVIDER") or "").strip().lower()
+        if provider in {"firebase", "dashboard"}:
+            client = DashboardUserDataClient.from_env()
+            if client:
+                try:
+                    client.upsert_signal(
+                        user_id=str(user_id),
+                        signal_key=signal_key,
+                        signal={
+                            "pair": str(signal.pair),
+                            "symbol": str(signal.pair),
+                            "direction": str(signal.direction),
+                            "timeframe": str(signal.timeframe),
+                            "entry": float(signal.entry),
+                            "sl": float(signal.sl),
+                            "tp": float(signal.tp),
+                            "rr": float(signal.rr),
+                            "strategy_name": (str(strategy_name) if strategy_name else None),
+                            "generated_at": generated_at,
+                            "status": "pending",
+                            "meta": meta or {},
+                        },
+                    )
+                except Exception:
+                    pass
+
         return int(row["id"]) if row else None
     finally:
         conn.close()

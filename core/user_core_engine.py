@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -138,8 +139,17 @@ def extract_strategy_configs(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
         if out:
             return out
 
-    # Fallback: treat the profile itself as a strategy config
-    return [_normalize_strategy_spec(profile, idx=0)]
+    # Default: require explicit strategies.
+    # Legacy fallback can be re-enabled for debugging/back-compat.
+    allow_fallback = str(os.getenv("ALLOW_PROFILE_STRATEGY_FALLBACK", "") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if allow_fallback:
+        return [_normalize_strategy_spec(profile, idx=0)]
+    return []
 
 
 # --- Sub-routines for decomposing core logic ---

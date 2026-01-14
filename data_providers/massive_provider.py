@@ -48,9 +48,24 @@ def _dt_to_iso(dt: datetime) -> str:
 
 
 def _dt_to_ms(dt: datetime) -> int:
+    """Convert datetime to Unix timestamp in milliseconds.
+    
+    Polygon API /v2/aggs/ticker/.../range/{from}/{to} accepts:
+    - Unix timestamp in MILLISECONDS (not seconds!)
+    - Date string like 'YYYY-MM-DD'
+    
+    Polygon uses milliseconds for timestamps in both request and response.
+    """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return int(dt.astimezone(timezone.utc).timestamp() * 1000)
+
+
+def _dt_to_date_str(dt: datetime) -> str:
+    """Convert datetime to YYYY-MM-DD format for Polygon API."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
 
 def _sleep_backoff_s(attempt: int, *, base: float = 0.5, cap: float = 12.0) -> float:
@@ -380,16 +395,20 @@ class MassiveDataProvider(DataProvider):
                     # Use a wider window than N*tf to tolerate provider gaps/delays while
                     # still returning only `limit` bars (most recent, due to sort=desc).
                     use_start = end - timedelta(seconds=int(per_request_limit) * int(self._tf_seconds(tf)) * 4)
-                start_ms = _dt_to_ms(use_start)
-                end_ms = _dt_to_ms(end)
+                # Polygon API works best with date string format (YYYY-MM-DD).
+                # Milliseconds and seconds formats sometimes return 0 results.
+                start_date = _dt_to_date_str(use_start)
+                end_date = _dt_to_date_str(end)
                 base = candles_path.rstrip("/")
-                url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_ms}/{end_ms}"
+                url = f"{self._cfg.base_url}{base}/{massive_ticker}/range/{int(mult)}/{span}/{start_date}/{end_date}"
                 params = {
                     "adjusted": "true",
                     # Prefer newest-first so small `limit` calls return the most recent bars.
                     # Normalization sorts ascending afterward.
                     "sort": "desc",
                     "limit": int(per_request_limit),
+                    # Polygon.io uses apiKey as query parameter
+                    "apiKey": self._key,
                 }
 
             last_err: Optional[Exception] = None
@@ -508,14 +527,23 @@ class MassiveDataProvider(DataProvider):
 
             out: List[Candle] = []
             cur = since_ts
+            logger.info(
+                "PAGINATION_START | symbol=%s | since=%s | until=%s | page_limit=%d | window_mins=%.1f",
+                symbol, since_ts.isoformat(), until_ts.isoformat(), page_limit, window.total_seconds()/60
+            )
+            page_count = 0
             # Walk forward in time; each request is bounded by window and capped by page_limit.
             while cur < until_ts:
                 nxt = min(until_ts, cur + window)
-                out.extend(_fetch_once(start=cur, end=nxt, per_request_limit=page_limit))
+                page_count += 1
+                page_candles = _fetch_once(start=cur, end=nxt, per_request_limit=page_limit)
+                out.extend(page_candles)
+                logger.debug("PAGINATION_PAGE | page=%d | cur=%s | nxt=%s | fetched=%d", page_count, cur, nxt, len(page_candles))
                 # Advance by window; safety to avoid infinite loops.
                 if nxt <= cur:
                     break
                 cur = nxt
+            logger.info("PAGINATION_END | symbol=%s | pages=%d | total_candles=%d", symbol, page_count, len(out))
 
             # Deduplicate + sort (normalize already sorts asc, but across pages we recheck)
             by_ts: Dict[datetime, Candle] = {c.ts: c for c in out}

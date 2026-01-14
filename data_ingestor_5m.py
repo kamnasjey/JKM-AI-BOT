@@ -4,7 +4,10 @@ import asyncio
 import os
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Callable, Awaitable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 from providers.base import MarketDataProvider
 from data_providers.base import DataProvider
@@ -27,10 +30,11 @@ class DataIngestor:
         provider: MarketDataProvider | DataProvider,
         fallback_provider: MarketDataProvider | DataProvider | None = None,
         poll_interval: int = 60,
-        warmup: int = 500,
+        warmup: int = 10000,
         incremental_limit: int = 5,
         persist_path: str | None = None,
         persist_every_cycles: int = 1,
+        on_cycle_complete: "Callable[[], Awaitable[None]] | None" = None,
     ):
         self.provider = provider
         self.fallback_provider = fallback_provider
@@ -42,6 +46,7 @@ class DataIngestor:
         self._cycles = 0
         self._running = False
         self._cooldown_until: dict[str, float] = {}
+        self._on_cycle_complete = on_cycle_complete
 
     async def run_forever(self):
         self._running = True
@@ -50,7 +55,7 @@ class DataIngestor:
         while self._running:
             try:
                 # 1. Get Symbols
-                symbols = get_union_watchlist(max_per_user=5)
+                symbols = get_union_watchlist()
                 logger.info(f"Ingestor: Refreshing {len(symbols)} symbols: {symbols}")
                 
                 # 2. Poll Data
@@ -66,6 +71,14 @@ class DataIngestor:
                         market_cache.save_json(self.persist_path)
                     except Exception as e:
                         logger.warning(f"Ingestor: Failed to persist cache: {e}")
+                
+                # 2.6 Trigger scan cycle callback after data refresh
+                if self._on_cycle_complete:
+                    try:
+                        logger.info("Ingestor: Triggering scan cycle callback...")
+                        await self._on_cycle_complete()
+                    except Exception as e:
+                        logger.error(f"Ingestor: Callback error: {e}")
                 
                 # 3. Wait
                 logger.info(f"Ingestor: Sleeping {self.poll_interval}s...")
@@ -111,20 +124,39 @@ class DataIngestor:
 
             # When doing incremental fetches, request a small lookback window so we can
             # retrieve ~N recent candles (helps with provider delays/gaps/dup-dedupe).
+            # For warmup (last_ts=None), set since_fetch to fetch enough historical data.
             since_fetch = last_ts
             if last_ts is not None:
                 since_fetch = last_ts - timedelta(minutes=5 * int(limit) * 3)
+            else:
+                # Warmup: fetch from 60 days ago to get enough data for H4 resampling.
+                # Forex markets are closed ~2 days/week, so we need extra buffer.
+                # 45 H4 bars = 7.5 days of forex data = ~12 calendar days minimum.
+                # We use 60 days to be safe and get sufficient historical context.
+                since_fetch = datetime.now(timezone.utc) - timedelta(days=60)
 
             provider_name = str(getattr(self.provider, "name", "unknown")).upper()
+            
+            # AUTOFILL: If gap detected (last_ts too old), fetch more candles to fill gap
+            autofill_limit = limit
+            if last_ts is not None:
+                gap_minutes = (datetime.now(timezone.utc) - last_ts).total_seconds() / 60
+                # If gap > 15 minutes (3 candles), autofill by fetching more
+                if gap_minutes > 15:
+                    # Calculate how many 5m candles we're missing
+                    missing_candles = int(gap_minutes / 5) + 5  # +5 buffer
+                    autofill_limit = min(missing_candles, 500)  # cap at 500
+                    logger.info(f"AUTOFILL | symbol={symbol} | gap_mins={gap_minutes:.1f} | fetching={autofill_limit} candles")
+            
             if hasattr(self.provider, "fetch_candles"):
                 # Massive: for small incremental pulls, prefer a "most recent N" request.
                 # This avoids fetching the oldest N bars from a lookback window.
-                if provider_name == "MASSIVE" and last_ts is not None and int(limit) <= 50:
+                if provider_name == "MASSIVE" and last_ts is not None and int(autofill_limit) <= 50:
                     candles = self.provider.fetch_candles(
                         symbol,
                         timeframe="m5",
-                        max_count=limit,
-                        limit=limit,
+                        max_count=autofill_limit,
+                        limit=autofill_limit,
                         since_ts=None,
                         until_ts=datetime.now(timezone.utc),
                     )
@@ -132,8 +164,8 @@ class DataIngestor:
                     candles = self.provider.fetch_candles(
                         symbol,
                         timeframe="m5",
-                        max_count=limit,
-                        limit=limit,
+                        max_count=autofill_limit,
+                        limit=autofill_limit,
                         since_ts=since_fetch,
                         until_ts=datetime.now(timezone.utc),
                     )
@@ -141,7 +173,7 @@ class DataIngestor:
                 candles = self.provider.get_candles(
                     symbol,
                     timeframe="m5",
-                    limit=limit,
+                    limit=autofill_limit,
                     since_ts=since_fetch,
                 )
             fetch_ms = (time.perf_counter() - t_fetch) * 1000.0

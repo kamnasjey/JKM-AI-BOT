@@ -223,6 +223,9 @@ class ScannerService:
         self._state_dirty = False
         self._state_last_saved_ts: float = 0.0
         self._state_save_min_interval_sec: float = 2.0
+        
+        # Lock to prevent concurrent scan cycles
+        self._scan_lock = asyncio.Lock() if hasattr(asyncio, 'Lock') else None
 
         # Performance guard counters (best-effort)
         self._perf_cycles: int = 0
@@ -299,7 +302,7 @@ class ScannerService:
             try:
                 from watchlist_union import get_union_watchlist
 
-                sym_list = [str(s).strip().upper() for s in get_union_watchlist(max_per_user=15) or []]
+                sym_list = [str(s).strip().upper() for s in get_union_watchlist() or []]
             except Exception:
                 sym_list = []
         if not sym_list:
@@ -589,7 +592,7 @@ class ScannerService:
                 from watchlist_union import get_union_watchlist
                 from core.ingest_debug import ingest_debug_enabled
 
-                syms = get_union_watchlist(max_per_user=5)
+                syms = get_union_watchlist()
                 loaded = 0
                 for sym in syms:
                     items = load_tail(sym, "m5", limit=int(getattr(config, "MARKETDATA_PRELOAD_M5_LIMIT", 5000) or 5000))
@@ -686,6 +689,7 @@ class ScannerService:
         # Warmup: fetch roughly last 7 days of M5 candles (7*24*12 = 2016).
         # Poll: every 5 minutes to align with M5 candle formation.
         # Note: IG demo/live may hit historical-data allowance; fallback avoids total downtime.
+        # The on_cycle_complete callback triggers a scan after each ingest cycle.
         self.ingestor = DataIngestor(
             provider=provider,
             fallback_provider=(fallback_provider if (provider is not fallback_provider) else None),
@@ -694,6 +698,7 @@ class ScannerService:
             incremental_limit=5,
             persist_path=_CACHE_PERSIST_PATH,
             persist_every_cycles=1,
+            on_cycle_complete=self._on_ingest_cycle_complete,
         )
         ingestor_task = asyncio.create_task(self.ingestor.run_forever())
 
@@ -736,6 +741,15 @@ class ScannerService:
                 id="scan_cycle",
                 replace_existing=True,
             )
+            
+            # Add outcome tracking job - runs every 1 hour
+            self._scheduler.add_job(
+                self._check_outcomes,
+                trigger=IntervalTrigger(hours=1),
+                id="outcome_check",
+                replace_existing=True,
+            )
+            
             self._scheduler.start()
             scheduler_ready = True
         except Exception as e:
@@ -786,7 +800,46 @@ class ScannerService:
         await ingestor_task
         logger.info("Service Loop Shutdown.")
 
+    async def _on_ingest_cycle_complete(self) -> None:
+        """Called by DataIngestor after each ingest cycle completes.
+        
+        This triggers a scan immediately after fresh candle data is available,
+        rather than waiting for a fixed scheduler interval.
+        """
+        if self._stop_event.is_set():
+            return
+        
+        log_kv(logger, "INGEST_CYCLE_COMPLETE", message="Triggering scan after ingest cycle")
+        
+        try:
+            await self._scan_cycle()
+        except Exception as e:
+            log_kv_error(logger, "INGEST_TRIGGERED_SCAN_ERROR", error=str(e))
+
+    async def _check_outcomes(self):
+        """Background job to check SL/TP hits for pending signals."""
+        try:
+            from core.outcome_tracker import run_outcome_check
+            result = run_outcome_check(market_cache)
+            if result.get("updated", 0) > 0:
+                log_kv(logger, "OUTCOME_CHECK", checked=result["checked"], updated=result["updated"])
+        except Exception as e:
+            log_kv_error(logger, "OUTCOME_CHECK_ERROR", error=str(e))
+
     async def _scan_cycle(self):
+        # Prevent concurrent scan cycles (from scheduler + ingest callback)
+        if self._scan_lock is None:
+            self._scan_lock = asyncio.Lock()
+        
+        if self._scan_lock.locked():
+            log_kv(logger, "SCAN_SKIP_LOCKED", message="Scan already in progress, skipping")
+            return
+        
+        async with self._scan_lock:
+            await self._do_scan_cycle()
+    
+    async def _do_scan_cycle(self):
+        """Actual scan cycle implementation."""
         scan_id = make_scan_id()
         timestamp = datetime.now()
         t0 = time.perf_counter()
@@ -805,7 +858,7 @@ class ScannerService:
             try:
                 from watchlist_union import get_union_watchlist
 
-                wl = get_union_watchlist(max_per_user=15)
+                wl = get_union_watchlist()
             except Exception:
                 wl = []
 
@@ -1469,6 +1522,12 @@ class ScannerService:
         profile = user
         tz_offset_hours = int(profile.get("tz_offset_hours") or 0)
         pairs = profile.get("watch_pairs", [])
+        try:
+            from core.plans import clamp_pairs, effective_max_pairs
+
+            pairs = clamp_pairs(pairs, int(effective_max_pairs(profile)))
+        except Exception:
+            pass
         if not pairs:
             return 0
 
@@ -1497,6 +1556,28 @@ class ScannerService:
         load_res = load_strategies_from_profile(merged_profile)
         strategies = load_res.strategies
         profile_errors = list(load_res.errors)
+
+        # Hard rule: do not scan unless user explicitly configured a strategy.
+        # If strategies are invalid, surface PROFILE_INVALID; otherwise NO_STRATEGY_CONFIGURED.
+        if not strategies:
+            reason = "PROFILE_INVALID" if profile_errors else "NO_STRATEGY_CONFIGURED"
+            internal_reason = "profile_invalid" if profile_errors else "no_strategy_configured"
+            extra: Dict[str, Any] = {}
+            if profile_errors and notify_mode == "admin_only":
+                extra["profile_errors"] = ";".join([str(e) for e in profile_errors[:6]])
+            if isinstance(outcomes, dict):
+                for pair in pairs:
+                    symbol = str(pair or "").strip().upper()
+                    if not symbol:
+                        continue
+                    row = {
+                        "kind": "NONE",
+                        "reason": reason,
+                        "internal_reason": internal_reason,
+                    }
+                    row.update(extra)
+                    outcomes[symbol] = row
+            return 0
 
         active_strategy = strategies[0] if strategies else profile
         strategy_id = None
@@ -2373,6 +2454,25 @@ class ScannerService:
                 except Exception:
                     # Top-level safety catch for persistence to never crash engine
                     pass
+
+                # Record to cooldown state immediately after persist (not just on Telegram send)
+                # This prevents duplicate signals even when Telegram is disabled
+                if self._state_loaded:
+                    try:
+                        self._state_store.record_sent(
+                            signal_key,
+                            now_ts,
+                            symbol,
+                            direction=str(signal.direction),
+                            timeframe=str(entry_tf),
+                            strategy_id=str(strategy_id or ""),
+                        )
+                        day_key = self._get_day_key_utc(tz_offset_hours)
+                        self._state_store.increment_daily(symbol, entry_tf, str(strategy_id or ""), day_key)
+                        self._state_dirty = True
+                        self._save_state_debounced(scan_id=scan_id)
+                    except Exception:
+                        log_kv_error(logger, "STATE_RECORD_PERSIST_ERROR", scan_id=scan_id, symbol=symbol)
 
                 log_kv(
                     logger,

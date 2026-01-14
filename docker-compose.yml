@@ -11,13 +11,14 @@ services:
       # Persistent state (signals, metrics, etc)
       - ./state:/app/state
       # Configs (if you want to hot-reload or persist overrides)
-      # - ./config:/app/config
+      - ./config:/app/config
       # Logs
       - ./logs:/app/logs
+      # User profiles database
+      - ./user_profiles.db:/app/user_profiles.db
     environment:
-      - TZ=Asia/Ulaanbaatar
-      # Add overrides if needed, e.g.
-      # - NOTIFY_MODE=production
+      - TZ=UTC
+      # INTERNAL_API_KEY is read from .env via env_file
 
   # Optional: Nginx for reverse proxy / SSL handling
   # nginx:

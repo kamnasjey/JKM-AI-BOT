@@ -80,7 +80,7 @@ Run these commands on the server to verify a successful deployment:
 2.  **Verify Health Endpoint**:
     ```bash
     curl http://localhost:8000/health
-    # Expected: {"status":"ok", ...}
+    # Expected: {"ok":true, "uptime_s":..., ...}
     ```
 
 3.  **Verify API & Signals**:
@@ -98,6 +98,88 @@ Run these commands on the server to verify a successful deployment:
     touch state/_write_test && echo OK > state/_write_test && cat state/_write_test
     rm state/_write_test
     ```
+
+## New API Endpoints (v0.2)
+
+All internal endpoints require header: `x-internal-api-key: <YOUR_INTERNAL_API_KEY>`
+
+### VPS Update (Scripted)
+
+From the VPS repo root:
+
+```bash
+chmod +x scripts/vps_update_backend.sh scripts/vps_verify_backend.sh
+./scripts/vps_update_backend.sh feature/billing-plans
+```
+
+In another shell (or after logs look good):
+
+```bash
+BASE_URL=http://127.0.0.1:8000 ./scripts/vps_verify_backend.sh
+```
+
+### Owner Admin Default Strategy (Optional)
+
+By default, the backend requires users to explicitly configure a strategy before scanning.
+
+If you want the owner/admin account to have the previously-default working strategy preloaded,
+set this env var in your backend Docker Compose:
+
+```bash
+OWNER_ADMIN_USER_ID=<backend_user_id_or_email>
+```
+
+Notes:
+- Preferred: set `OWNER_ADMIN_USER_ID` to the backend `user_id` (opaque id).
+- Convenience: you may also set it to an email (e.g. `Kamnasjey@gmail.com`) *if that email exists*
+    in the backend sqlite user DB.
+
+On startup, if that user has no saved strategies yet, the backend will seed the owner strategy
+(`strategy_id: jkm_strategy`, `name: JKM strategy`) into the per-user strategies store.
+
+To find the correct backend `user_id` for an owner email:
+
+```bash
+curl -H "x-internal-api-key: $INTERNAL_API_KEY" \
+    "http://localhost:8000/api/admin/resolve-user?email=Kamnasjey%40gmail.com"
+```
+
+### Engine Status (Truth Source)
+```bash
+curl -H "x-internal-api-key: $INTERNAL_API_KEY" http://localhost:8000/api/engine/status
+# Returns: {"ok":true,"running":true,"last_scan_ts":1736684400,"last_scan_id":"scan_abc123","cadence_sec":300,"last_error":null}
+```
+
+### Manual Scan Trigger
+```bash
+curl -X POST -H "x-internal-api-key: $INTERNAL_API_KEY" http://localhost:8000/api/engine/manual-scan
+# Returns: {"ok":true,"result":{"ok":true,"triggered":true,"last_scan_id":"scan_xyz","last_scan_ts":"..."}}
+```
+
+### Signal Detail
+```bash
+curl "http://localhost:8000/api/signals/abc123-signal-id"
+# Returns: {"ok":true,"signal":{...}} or 404 {"ok":false,"message":"not_found"}
+```
+
+### Symbols (Watchlist)
+```bash
+curl http://localhost:8000/api/symbols
+# Returns: {"ok":true,"symbols":["EURUSD","XAUUSD",...],"count":15}
+```
+
+### Candles for Charts
+```bash
+curl "http://localhost:8000/api/markets/XAUUSD/candles?tf=M5&limit=200"
+# Returns: {"ok":true,"symbol":"XAUUSD","tf":"M5","candles":[{"time":1736684400,"open":2650.5,"high":2651.0,"low":2649.8,"close":2650.2},...],"count":200}
+```
+
+### Metrics Summary
+```bash
+curl http://localhost:8000/api/metrics
+# Returns: {"ok":true,"total_signals":1234,"ok_count":456,"none_count":778,"hit_rate":0.3693,"last_24h_ok":12,"last_24h_total":45}
+```
+
 
 5.  **Check Application Logs**:
     ```bash

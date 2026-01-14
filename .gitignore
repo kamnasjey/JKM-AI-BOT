@@ -43,6 +43,9 @@ dist/
 frontend/dist/
 frontend/.vite/
 
+# Nested workspace clone (JKM-DASHBOARD)
+dashboard/
+
 # Build artifacts
 build/
 *.egg-info/
@@ -59,6 +62,8 @@ user_profiles.json
 allowed_users.json
 instruments.json
 state/
+!state/__init__.py
+!state/metrics_alert_state.py
 data/
 .idea/
 .DS_Store
