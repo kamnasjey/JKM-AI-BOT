@@ -15,7 +15,7 @@ jobs:
   deploy:
     name: Deploy to VPS (Docker Compose)
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
 
     steps:
       - name: Start SSH agent
@@ -24,22 +24,31 @@ jobs:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
       - name: Add VPS to known_hosts
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          if [ -n "${VPS_KNOWN_HOSTS}" ]; then
+            echo "${VPS_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${VPS_SSH_PORT}" -H "${VPS_HOST}" >> ~/.ssh/known_hosts
+          fi
           chmod 600 ~/.ssh/known_hosts
 
       - name: Deploy
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+          VPS_APP_DIR: ${{ secrets.VPS_DEPLOY_PATH || secrets.VPS_APP_DIR }}
         run: |
           set -euo pipefail
 
           echo "Deploying to ${VPS_USER}@${VPS_HOST}:${VPS_APP_DIR}"
 
-          ssh -o BatchMode=yes "${VPS_USER}@${VPS_HOST}" "set -euo pipefail;
+          ssh -o BatchMode=yes -p "${VPS_SSH_PORT}" "${VPS_USER}@${VPS_HOST}" "set -euo pipefail;
             cd '${VPS_APP_DIR}';
             git fetch --all --prune;
             git reset --hard origin/main;
@@ -52,6 +61,7 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
         run: |
           set +e
-          ssh -o BatchMode=yes "${VPS_USER}@${VPS_HOST}" "curl -fsS http://127.0.0.1:8000/health | head" || true
+          ssh -o BatchMode=yes -p "${VPS_SSH_PORT}" "${VPS_USER}@${VPS_HOST}" "curl -fsS http://127.0.0.1:8000/health | head" || true
