@@ -12,6 +12,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import asyncio
 
+# Backward-compatible exports for tests/legacy callers.
+try:
+    from watchlist_union import get_union_watchlist  # type: ignore
+except Exception:
+    def get_union_watchlist(*_args: Any, **_kwargs: Any) -> list[str]:  # type: ignore
+        return []
+
+try:
+    import scanner_service as ss  # type: ignore
+except Exception:  # pragma: no cover
+    ss = None  # type: ignore
+
 APP_START = time.time()
 app = FastAPI(title="JKM-AI-BOT API", version="0.1.0")
 

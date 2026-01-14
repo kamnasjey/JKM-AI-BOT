@@ -560,10 +560,49 @@ def scan_pair_cached_indicator_free(
         active_specs = []
 
     if not active_specs:
-        # Fallback: treat the profile itself as one strategy
-        spec0, errs0 = StrategySpec.from_dict(profile if isinstance(profile, dict) else {})
-        if spec0 is not None and not errs0:
-            active_specs = [spec0]
+        # Backward-compatible fallback: treat profile-level config as one strategy.
+        # Many tests/legacy callers pass only {detectors, allowed_regimes, min_score, ...}
+        # without StrategySpec fields (notably strategy_id).
+        raw_profile = profile if isinstance(profile, dict) else {}
+        has_strategy_like_fields = any(
+            k in raw_profile
+            for k in (
+                "detectors",
+                "allowed_regimes",
+                "detector_params",
+                "family_params",
+                "detector_weights",
+                "family_weights",
+                "weights",
+            )
+        )
+        if has_strategy_like_fields:
+            raw0 = dict(raw_profile)
+            raw0.setdefault("strategy_id", "profile_default")
+            raw0.setdefault("enabled", True)
+
+            if raw0.get("priority") is None:
+                try:
+                    raw0["priority"] = int(raw_profile.get("priority") or 100)
+                except Exception:
+                    raw0["priority"] = 100
+
+            # Important: default min_score to 0.0 for backward compatibility.
+            if raw0.get("min_score") is None:
+                try:
+                    raw0["min_score"] = float(raw_profile.get("min_score") or 0.0)
+                except Exception:
+                    raw0["min_score"] = 0.0
+
+            if raw0.get("min_rr") is None:
+                try:
+                    raw0["min_rr"] = float(raw_profile.get("min_rr") or 2.0)
+                except Exception:
+                    raw0["min_rr"] = 2.0
+
+            spec0, errs0 = StrategySpec.from_dict(raw0)
+            if spec0 is not None and not errs0:
+                active_specs = [spec0]
 
     best_fail_debug: Dict[str, Any] = dict(debug)
     best_fail_reason: Optional[str] = None
