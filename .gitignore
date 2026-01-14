@@ -33,6 +33,7 @@ market_data/
 
 # OS/editor
 .vscode/
+*.code-workspace
 Thumbs.db
 Desktop.ini
 
