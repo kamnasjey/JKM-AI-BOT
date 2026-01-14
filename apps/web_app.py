@@ -91,9 +91,22 @@ def api_put_strategies(req: Request, payload: Dict[str, Any] = Body(...)):
     acct, _token = _require_account(req)
     user_id = str((acct or {}).get("user_id") or "unknown")
 
-    from core.user_strategies_store import save_user_strategies
+    from core.user_strategies_store import save_user_strategies, validate_normalize_user_strategies
 
     raw_items = (payload or {}).get("strategies")
+    normalized, errors = validate_normalize_user_strategies(raw_items)
+    if errors and not normalized:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "error": "invalid_strategies",
+                "user_id": user_id,
+                "strategies": [],
+                "warnings": list(errors),
+            },
+        )
+
     res = save_user_strategies(user_id, raw_items)
     if not bool(res.get("ok")):
         return JSONResponse(status_code=400, content=res)
