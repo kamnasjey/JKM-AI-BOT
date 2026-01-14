@@ -15,7 +15,7 @@ class DashboardUserDataClient:
 
     @staticmethod
     def from_env() -> Optional["DashboardUserDataClient"]:
-        base = (os.getenv("DASHBOARD_USER_DATA_URL") or "").strip()
+        base = (os.getenv("DASHBOARD_USER_DATA_URL") or os.getenv("DASHBOARD_BASE_URL") or "").strip()
         key = (os.getenv("DASHBOARD_INTERNAL_API_KEY") or "").strip()
         if not base or not key:
             return None

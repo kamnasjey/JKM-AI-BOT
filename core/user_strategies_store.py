@@ -50,18 +50,9 @@ def load_user_strategies(user_id: str) -> List[Dict[str, Any]]:
         if client:
             try:
                 remote = client.get_strategies(str(user_id))
-                # Cache locally for resiliency.
-                payload = {
-                    "schema_version": 1,
-                    "user_id": str(user_id or "unknown"),
-                    "updated_at": int(time.time()),
-                    "strategies": remote,
-                }
-                atomic_write_text(user_strategies_path(user_id), json.dumps(payload, ensure_ascii=False, indent=2))
                 return [dict(s) for s in remote if isinstance(s, dict)]
             except Exception:
-                # Fall back to local cache.
-                pass
+                return []
 
     path = user_strategies_path(user_id)
     try:
@@ -135,6 +126,30 @@ def save_user_strategies(user_id: str, raw_items: Any) -> Dict[str, Any]:
             "warnings": errors,
         }
 
+    provider = (os.getenv("USER_STRATEGIES_PROVIDER") or "").strip().lower()
+    if provider in {"firebase", "dashboard"}:
+        client = DashboardUserDataClient.from_env()
+        if client:
+            try:
+                client.put_strategies(str(user_id), normalized)
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "error": f"Saved locally but failed to sync to Firebase: {exc}",
+                    "user_id": str(user_id or "unknown"),
+                    "schema_version": 1,
+                    "strategies": normalized,
+                    "warnings": errors,
+                }
+
+        return {
+            "ok": True,
+            "user_id": str(user_id or "unknown"),
+            "schema_version": 1,
+            "strategies": normalized,
+            "warnings": errors,
+        }
+
     payload = {
         "schema_version": 1,
         "user_id": str(user_id or "unknown"),
@@ -144,23 +159,6 @@ def save_user_strategies(user_id: str, raw_items: Any) -> Dict[str, Any]:
 
     path = user_strategies_path(user_id)
     atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
-
-    provider = (os.getenv("USER_STRATEGIES_PROVIDER") or "").strip().lower()
-    if provider in {"firebase", "dashboard"}:
-        client = DashboardUserDataClient.from_env()
-        if client:
-            try:
-                client.put_strategies(str(user_id), normalized)
-            except Exception as exc:
-                # Keep local write but report remote failure.
-                return {
-                    "ok": False,
-                    "error": f"Saved locally but failed to sync to Firebase: {exc}",
-                    "user_id": payload["user_id"],
-                    "schema_version": payload["schema_version"],
-                    "strategies": normalized,
-                    "warnings": errors,
-                }
 
     return {
         "ok": True,

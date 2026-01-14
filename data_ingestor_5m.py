@@ -250,11 +250,13 @@ class DataIngestor:
             msg = str(e)
             error_code: Optional[str] = None
             body_short: str = ""
+            status_code: Optional[int] = None
 
             # If it's an HTTPError, we can sometimes inspect a structured error payload.
             if isinstance(e, requests.exceptions.HTTPError):
                 resp = getattr(e, "response", None)
                 if resp is not None:
+                    status_code = resp.status_code
                     try:
                         data = resp.json() if resp.content else {}
                         if isinstance(data, dict):
@@ -268,19 +270,26 @@ class DataIngestor:
 
             if error_code:
                 msg = f"{msg} | errorCode={error_code}"
+            if status_code:
+                msg = f"HTTP {status_code} | {msg}"
             if body_short and ("errorCode" in body_short or "exceeded" in body_short):
                 msg = f"{msg} | body={body_short}"
 
             logger.warning(f"Failed to fetch {symbol}: {msg}")
 
-            # Basic 429 cooldown handling (best-effort) to avoid hammering.
-            if "429" in msg or "rate" in msg.lower():
+            # 429 rate limit cooldown handling
+            if status_code == 429 or "429" in msg or "rate" in msg.lower():
                 now_ts = asyncio.get_running_loop().time()
                 prev = float(self._cooldown_until.get(symbol) or 0.0)
                 # Increase cooldown up to 5 minutes.
                 next_cd = max(prev, now_ts) + 60.0
                 next_cd = min(next_cd, now_ts + 300.0)
                 self._cooldown_until[symbol] = float(next_cd)
+                logger.info(f"Rate limited on {symbol}, cooldown until {next_cd:.0f}")
+
+            # 5xx server errors - log but don't take special action (will retry next cycle)
+            if status_code and 500 <= status_code < 600:
+                logger.error(f"Server error {status_code} for {symbol} - will retry next cycle")
 
             # Optional: keep the system usable by filling cache from a fallback provider.
             if self.fallback_provider is not None:

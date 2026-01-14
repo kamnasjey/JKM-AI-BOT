@@ -646,9 +646,11 @@ def set_telegram_chat(user_id: str, chat_id: str) -> bool:
                         "telegram_enabled": True,
                     },
                 )
-                # Also keep local cache best-effort.
         except Exception:
             pass
+
+        # Canonical storage is dashboard; do not persist locally.
+        return True
 
     init_db()
     conn = _get_connection()
@@ -681,6 +683,8 @@ def get_telegram_chat(user_id: str) -> Optional[str]:
         except Exception:
             pass
 
+        return None
+
     conn = _get_connection()
     row = conn.execute(
         "SELECT telegram_chat_id FROM users WHERE user_id=?",
@@ -704,6 +708,9 @@ def set_telegram_enabled(user_id: str, enabled: bool) -> bool:
                 client.put_user_prefs(str(user_id), {"telegram_enabled": bool(enabled)})
         except Exception:
             pass
+
+            # Canonical storage is dashboard; do not persist locally.
+            return True
 
     init_db()
     conn = _get_connection()
@@ -734,6 +741,8 @@ def get_telegram_enabled(user_id: str) -> bool:
                     return bool(prefs.get("telegram_enabled"))
         except Exception:
             pass
+
+        return True
 
     conn = _get_connection()
     row = conn.execute(
@@ -769,6 +778,8 @@ def list_users_with_telegram() -> List[Dict[str, Any]]:
                 return out
         except Exception:
             pass
+
+        return []
 
     conn = _get_connection()
     rows = conn.execute(
