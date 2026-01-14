@@ -480,17 +480,20 @@ def load_strategies_from_profile(profile: Dict[str, Any]) -> StrategyLoadResult:
         raw_items = [] if require_explicit else [profile]
 
     out: List[Dict[str, Any]] = []
-    # Use the main detector registry (detectors/registry.py) which has all detectors
-    # rather than engines/detectors which may be incomplete
+    # Resolve known detector names across both registries.
+    # The codebase has both `detectors/` and `engines/detectors/` namespaces;
+    # tests expect the engine registry names (e.g., range_box_edge).
+    known_detectors = set()
     try:
         from detectors.registry import DETECTOR_REGISTRY
-        known_detectors = set(DETECTOR_REGISTRY.keys())
+
+        known_detectors |= set(DETECTOR_REGISTRY.keys())
     except Exception:
-        # Fallback to engines registry
-        try:
-            known_detectors = set(detector_registry.list_detectors())
-        except Exception:
-            known_detectors = set()
+        pass
+    try:
+        known_detectors |= set(detector_registry.list_detectors() or [])
+    except Exception:
+        pass
     for idx, raw in enumerate(raw_items):
         obj, err = _parse_json_maybe(raw)
         if err:
@@ -517,14 +520,17 @@ def load_strategies_from_profile(profile: Dict[str, Any]) -> StrategyLoadResult:
         if not bool(spec.get("enabled", True)):
             continue
 
-        # Drop unknown detectors but keep strategy valid.
+        # Drop unknown detectors (best-effort), but never erase a user-provided allow-list.
+        # If filtering would result in an empty list, keep the original list and let the
+        # downstream registry/runner ignore unknown names safely.
         dets = spec.get("detectors")
         if known_detectors and isinstance(dets, list) and dets:
             filtered = [d for d in dets if d in known_detectors]
             dropped = [d for d in dets if d not in known_detectors]
             if dropped:
                 errors.append(f"STRATEGY_{idx}:UNKNOWN_DETECTORS")
-            spec["detectors"] = filtered
+            if filtered:
+                spec["detectors"] = filtered
 
         out.append(spec)
 
