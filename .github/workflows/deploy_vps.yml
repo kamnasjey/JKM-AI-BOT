@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - main
+      - deploy
       - feature/billing-plans
   workflow_dispatch:
     inputs:
       branch:
         description: "Git branch to deploy on VPS"
         required: true
-        default: "main"
+        default: "deploy"
 
 concurrency:
   group: deploy-vps
