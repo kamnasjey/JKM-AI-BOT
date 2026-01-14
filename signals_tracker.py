@@ -14,6 +14,10 @@ from services.dashboard_user_data_client import DashboardUserDataClient
 DB_PATH = os.getenv("USER_DB_PATH", "user_profiles.db")
 
 
+def _signals_provider() -> str:
+    return (os.getenv("USER_SIGNALS_PROVIDER") or "").strip().lower()
+
+
 def _get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -92,7 +96,7 @@ def record_signal(
     meta: Optional[Dict[str, Any]] = None,
 ) -> Optional[int]:
     """Persist a signal only if it was actually sent to the user."""
-    init_signals_db()
+    provider = _signals_provider()
 
     generated_at = _dt_to_iso(getattr(signal, "generated_at", datetime.utcnow()))
     signal_key = _make_signal_key(
@@ -105,6 +109,38 @@ def record_signal(
         tp=float(signal.tp),
         generated_at_iso=generated_at,
     )
+
+    # Canonical write (Firestore via dashboard internal API) when enabled.
+    if provider in {"firebase", "dashboard"}:
+        client = DashboardUserDataClient.from_env()
+        if client:
+            try:
+                client.upsert_signal(
+                    user_id=str(user_id),
+                    signal_key=signal_key,
+                    signal={
+                        "pair": str(signal.pair),
+                        "symbol": str(signal.pair),
+                        "direction": str(signal.direction),
+                        "timeframe": str(signal.timeframe),
+                        "entry": float(signal.entry),
+                        "sl": float(signal.sl),
+                        "tp": float(signal.tp),
+                        "rr": float(signal.rr),
+                        "strategy_name": (str(strategy_name) if strategy_name else None),
+                        "generated_at": generated_at,
+                        "status": "pending",
+                        "meta": meta or {},
+                    },
+                )
+            except Exception:
+                pass
+
+        # When using dashboard as canonical storage, do not persist user signals locally.
+        return None
+
+    # Legacy/local provider: keep SQLite history.
+    init_signals_db()
 
     conn = _get_connection()
     try:
@@ -136,39 +172,16 @@ def record_signal(
         conn.commit()
         row = conn.execute("SELECT id FROM signals WHERE signal_key=?", (signal_key,)).fetchone()
 
-        # Optional: mirror into Firebase (via dashboard internal API) for user-centric history.
-        provider = (os.getenv("USER_SIGNALS_PROVIDER") or "").strip().lower()
-        if provider in {"firebase", "dashboard"}:
-            client = DashboardUserDataClient.from_env()
-            if client:
-                try:
-                    client.upsert_signal(
-                        user_id=str(user_id),
-                        signal_key=signal_key,
-                        signal={
-                            "pair": str(signal.pair),
-                            "symbol": str(signal.pair),
-                            "direction": str(signal.direction),
-                            "timeframe": str(signal.timeframe),
-                            "entry": float(signal.entry),
-                            "sl": float(signal.sl),
-                            "tp": float(signal.tp),
-                            "rr": float(signal.rr),
-                            "strategy_name": (str(strategy_name) if strategy_name else None),
-                            "generated_at": generated_at,
-                            "status": "pending",
-                            "meta": meta or {},
-                        },
-                    )
-                except Exception:
-                    pass
-
         return int(row["id"]) if row else None
     finally:
         conn.close()
 
 
 def list_pending_signals(user_id: str, limit: int = 200) -> List[Dict[str, Any]]:
+    provider = _signals_provider()
+    if provider in {"firebase", "dashboard"}:
+        return []
+
     init_signals_db()
     conn = _get_connection()
     try:
@@ -193,6 +206,10 @@ def update_signal_resolution(
     resolved_at: datetime,
     resolved_price: Optional[float] = None,
 ) -> None:
+    provider = _signals_provider()
+    if provider in {"firebase", "dashboard"}:
+        return
+
     init_signals_db()
     conn = _get_connection()
     try:
@@ -210,6 +227,19 @@ def update_signal_resolution(
 
 
 def get_user_metrics(user_id: str) -> Dict[str, Any]:
+    provider = _signals_provider()
+    if provider in {"firebase", "dashboard"}:
+        return {
+            "user_id": str(user_id),
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "expired": 0,
+            "total": 0,
+            "decided": 0,
+            "winrate": 0.0,
+        }
+
     init_signals_db()
     conn = _get_connection()
     try:

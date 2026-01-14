@@ -878,10 +878,33 @@ def run_simulation_backtest(payload: dict = Body(...)):
     5. Return win/loss statistics
     """
     import logging
+    import traceback
     from datetime import datetime, timedelta, timezone
     from collections import defaultdict
     
     _log = logging.getLogger("backtest.simulate")
+    
+    # Wrap entire function in try/except for 500 error prevention
+    try:
+        return _run_simulation_backtest_impl(payload, _log)
+    except Exception as e:
+        _log.error("Simulation backtest failed: %s\n%s", e, traceback.format_exc())
+        return {
+            "ok": False,
+            "error": f"Simulation failed: {str(e)[:200]}",
+            "error_type": type(e).__name__,
+            "total_entries": 0,
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "win_rate": None,
+        }
+
+
+def _run_simulation_backtest_impl(payload: dict, _log):
+    """Internal implementation of simulation backtest."""
+    from datetime import datetime, timedelta, timezone
+    from collections import defaultdict
     
     strategy_id = (payload.get("strategy_id") or "").strip() or None
     detector_names = payload.get("detectors") or []
@@ -959,14 +982,38 @@ def run_simulation_backtest(payload: dict = Body(...)):
     
     cache_path = Path("state/market_cache.json")
     temp_cache = MarketDataCache(max_len=20000)
+    loaded_symbols = 0
     if cache_path.exists():
-        loaded = temp_cache.load_json(str(cache_path))
-        _log.info("Loaded %d symbols from market_cache.json", loaded)
+        try:
+            loaded_symbols = temp_cache.load_json(str(cache_path))
+            _log.info("Loaded %d symbols from market_cache.json", loaded_symbols)
+        except Exception as e:
+            _log.error("Failed to load market_cache.json: %s", e)
+            return {
+                "ok": False,
+                "error": f"Market data file corrupted or unreadable: {e}",
+                "total_entries": 0,
+                "wins": 0,
+                "losses": 0,
+                "pending": 0,
+                "win_rate": None,
+            }
     else:
         _log.warning("market_cache.json not found at %s", cache_path)
         return {
             "ok": False,
             "error": f"No market data found. Cache file missing: {cache_path}",
+            "total_entries": 0,
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "win_rate": None,
+        }
+    
+    if loaded_symbols == 0:
+        return {
+            "ok": False,
+            "error": "Market data file exists but contains no valid symbols",
             "total_entries": 0,
             "wins": 0,
             "losses": 0,
@@ -1091,7 +1138,9 @@ def run_simulation_backtest(payload: dict = Body(...)):
                 # Run each detector
                 for d_name in valid_detectors:
                     try:
-                        detector_class = DETECTOR_REGISTRY[d_name]
+                        detector_class = DETECTOR_REGISTRY.get(d_name)
+                        if detector_class is None:
+                            continue
                         detector_instance = detector_class()
                         
                         # Default user config
@@ -1102,13 +1151,17 @@ def run_simulation_backtest(payload: dict = Body(...)):
                         }
                         
                         # Run detector with proper parameters
-                        result = detector_instance.detect(
-                            pair=symbol,
-                            entry_candles=current_candles,
-                            trend_candles=current_h4_candles,
-                            primitives=primitives,
-                            user_config=user_config,
-                        )
+                        try:
+                            result = detector_instance.detect(
+                                pair=symbol,
+                                entry_candles=current_candles,
+                                trend_candles=current_h4_candles,
+                                primitives=primitives,
+                                user_config=user_config,
+                            )
+                        except Exception as det_err:
+                            _log.debug("Detector %s detection error on %s: %s", d_name, symbol, det_err)
+                            continue
                         
                         if result and hasattr(result, "direction"):
                             direction = result.direction
