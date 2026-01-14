@@ -22,10 +22,17 @@ env
 logs
 market_data
 data
-state
 *.db
 *.sqlite
 *.sqlite3
+
+# State folder data files (but keep .py files)
+state/*.json
+state/*.jsonl
+state/*.db
+state/user_strategies/
+state/metrics_daily/
+state/__pycache__/
 
 # Nested repos / local clones
 /dashboard
