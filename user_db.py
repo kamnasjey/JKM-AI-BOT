@@ -779,7 +779,7 @@ def list_users_with_telegram() -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-                return []
+        return []
 
     conn = _get_connection()
     rows = conn.execute(
