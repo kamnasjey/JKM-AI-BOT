@@ -25,7 +25,8 @@ def _rr(entry: float, sl: float, tp: float) -> float:
     return reward / risk
 
 
-@register_detector
+# MERGED: use rectangle_range_edge instead
+# @register_detector
 class RangeBoxEdgeDetector(BaseDetector):
     """Trades range edges using a simple support/resistance "box".
 

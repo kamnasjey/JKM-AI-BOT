@@ -21,6 +21,14 @@ from detectors.registry import DETECTOR_REGISTRY as LEGACY_REGISTRY
 from engine_blocks import Candle
 from core.primitives import PrimitiveResults
 
+# Skip duplicates - these exist in engines/detectors with better implementations
+DUPLICATES_TO_SKIP = {
+    "pinbar_at_level",      # engines/detectors/candles.py has improved version
+    "fibo_retrace_confluence",  # engines/detectors/fibo.py
+    "sr_role_reversal",     # engines/detectors/sr.py
+    "fakeout_trap",         # engines/detectors/range.py
+}
+
 
 class LegacyDetectorAdapter(NewBaseDetector):
     """

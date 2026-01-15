@@ -141,7 +141,8 @@ class SRBounceDetector(BaseDetector):
         return DetectorResult(detector_name=self.name, match=False)
 
 
-@register_detector
+# MERGED: use sr_break_close instead
+# @register_detector
 class SRBreakoutDetector(BaseDetector):
     """
     Detects breakout through S/R zones.

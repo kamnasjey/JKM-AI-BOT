@@ -13,7 +13,8 @@ from core.primitives import PrimitiveResults
 from core.types import Regime
 
 
-@register_detector
+# MERGED: use fibo_retrace_confluence instead (has S/R confluence)
+# @register_detector
 class FiboRetracementDetector(BaseDetector):
     """
     Detects price in Fibonacci retracement zones.

@@ -13,7 +13,8 @@ from core.primitives import PrimitiveResults
 from core.types import Regime
 
 
-@register_detector
+# MERGED: use pinbar_at_level instead
+# @register_detector
 class PinbarDetector(BaseDetector):
     """
     Detects pinbar (hammer/shooting star) candlestick patterns.
@@ -79,7 +80,8 @@ class PinbarDetector(BaseDetector):
         return DetectorResult(detector_name=self.name, match=False)
 
 
-@register_detector
+# MERGED: use engulf_at_level instead
+# @register_detector
 class EngulfingDetector(BaseDetector):
     """
     Detects engulfing candlestick patterns.
