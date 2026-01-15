@@ -20,7 +20,7 @@ def test_hits_aggregation_and_direction_choice():
         DetectorHit(detector="doji", direction="SELL", score_contrib=0.30, family="pattern"),
     ]
 
-    # BUY total = 0.60 + 0.55 + confluence(2 families => +0.25) = 1.40
+    # BUY total = 0.60 + 0.55 + confluence(2 families => +0.25) - correlation_discount(range_box_edge|sr_bounce => -0.25) = 1.15
     spec = StrategySpec(
         strategy_id="t",
         enabled=True,
@@ -38,7 +38,8 @@ def test_hits_aggregation_and_direction_choice():
 
     assert res.ok is True
     assert res.direction == "BUY"
-    assert float(res.evidence.get("buy_score")) >= 1.39
+    # Score after correlation discount: 0.60 + 0.55 + 0.25 - 0.25 = 1.15
+    assert float(res.evidence.get("buy_score")) >= 1.14
     assert res.evidence.get("direction") == "BUY"
 
 
