@@ -1396,23 +1396,45 @@ def run_outcome_check_api():
 
 @app.get("/api/detectors")
 async def list_detectors():
-    """List all available detectors with metadata."""
-    from detectors.registry import DETECTOR_REGISTRY, get_detector
+    """List all available detectors with metadata (unified registry)."""
+    from engines.detectors import detector_registry
+    from engines.detectors.legacy_adapter import ensure_legacy_registered
     
+    ensure_legacy_registered()
+
     result = []
-    for name in sorted(DETECTOR_REGISTRY.keys()):
+    for name in sorted(detector_registry.list_detectors()):
         try:
-            det = get_detector(name)
+            det = detector_registry.create_detector(name)
             if det:
+                doc = getattr(det, 'description', '') or ''
+                if hasattr(det, 'get_doc'):
+                    doc = det.get_doc() or doc
+                
+                params_schema = {}
+                if hasattr(det, 'get_params_schema'):
+                    params_schema = det.get_params_schema()
+                elif hasattr(det, 'meta') and hasattr(det.meta, 'param_schema'):
+                    params_schema = det.meta.param_schema or {}
+                
+                examples = []
+                if hasattr(det, 'get_examples'):
+                    examples = det.get_examples()
+                
+                stage = "setup"
+                if hasattr(det, 'meta') and hasattr(det.meta, 'pipeline_stage'):
+                    stage = det.meta.pipeline_stage or "setup"
+                
                 result.append({
                     "name": name,
-                    "doc": det.get_doc() if hasattr(det, "get_doc") else "",
-                    "params_schema": det.get_params_schema() if hasattr(det, "get_params_schema") else {},
-                    "examples": det.get_examples() if hasattr(det, "get_examples") else [],
+                    "doc": doc,
+                    "params_schema": params_schema,
+                    "examples": examples,
+                    "stage": stage,
                 })
         except Exception:
-            result.append({"name": name, "doc": "", "params_schema": {}, "examples": []})
-    
+            result.append({"name": name, "doc": "", "params_schema": {}, "examples": [], "stage": "setup"})
+
     return {"ok": True, "detectors": result, "count": len(result)}
 
 
