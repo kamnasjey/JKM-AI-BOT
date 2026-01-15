@@ -55,6 +55,10 @@ class DetectorMeta:
     # Optional deterministic self-tests.
     selftests: List[SelfTestCase] = field(default_factory=list)
 
+    # Pipeline stage: "gate", "setup", or "validation".
+    # Gates run first (informational), setups produce signals, validations filter.
+    pipeline_stage: str = "setup"
+
 
 @dataclass
 class DetectorResult:

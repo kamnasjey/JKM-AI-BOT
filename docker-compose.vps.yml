@@ -1,9 +1,6 @@
-version: "3.8"
-
 services:
   backend:
     build: ./ganbayar_trading_bot
-    image: jkm-ai-bot-backend
     container_name: jkm_bot_backend
     restart: unless-stopped
     env_file:
@@ -12,6 +9,8 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./state:/app/state
+      - ./config:/app/config
       - ./logs:/app/logs
     environment:
-      - TZ=Asia/Ulaanbaatar
+      TZ: UTC
+      TELEGRAM_TOKEN: "7696542214:AAFFnc0DFx8Ln1my3IzD2nhHsJj0qocskMk"

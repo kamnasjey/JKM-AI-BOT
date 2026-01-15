@@ -51,24 +51,7 @@ def load_user_strategies(user_id: str) -> List[Dict[str, Any]]:
         if client:
             try:
                 remote = client.get_strategies(str(user_id))
-                out = [dict(s) for s in remote if isinstance(s, dict)]
-                if out:
-                    return out
-
-                # If dashboard storage is enabled but user has no strategies yet,
-                # fall back to a safe built-in default (especially in privacy mode).
-                auto_default = str(os.getenv("AUTO_DEFAULT_STRATEGY", "") or "").strip().lower() in {
-                    "1",
-                    "true",
-                    "yes",
-                    "on",
-                }
-                if privacy_mode_enabled() or auto_default:
-                    from core.default_strategies import get_default_user_strategies
-
-                    return get_default_user_strategies()
-
-                return []
+                return [dict(s) for s in remote if isinstance(s, dict)]
             except Exception:
                 # Resiliency: if dashboard fetch fails, fall back to local.
                 if privacy_mode_enabled():

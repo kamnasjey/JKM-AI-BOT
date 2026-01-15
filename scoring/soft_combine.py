@@ -4,6 +4,7 @@ Soft combine scoring v1.
 
 - Aggregates per-detector hits into BUY/SELL scores.
 - Applies a simple confluence bonus when 2+ independent families agree.
+- Applies correlation discount for overlapping detector pairs.
 - Resolves conflicts score-aware.
 
 Indicator-free: operates on detector hits only.
@@ -12,14 +13,43 @@ Indicator-free: operates on detector hits only.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Set, Union
+from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Set, Tuple, Union
 
 from engine.models import CombineResult, DetectorHit
 from strategies.strategy_spec import StrategySpec
 
 
 _REGIMES = {"TREND_BULL", "TREND_BEAR", "RANGE", "CHOP"}
-_FAMILIES = {"range", "sr", "structure", "fibo", "geometry", "time", "pattern"}
+_FAMILIES = {"range", "sr", "structure", "fibo", "geometry", "time", "pattern", "momentum", "mean_reversion", "gate"}
+
+# Correlation discount: detector pairs that often fire together get discounted.
+# Key: frozenset({detector_a, detector_b}), Value: discount factor (0.0 = no discount, 1.0 = full discount)
+_CORRELATION_PAIRS: Dict[frozenset, float] = {
+    frozenset({"pinbar", "pinbar_at_level"}): 0.4,
+    frozenset({"sr_bounce", "sr_breakout"}): 0.3,
+    frozenset({"fibo_retracement", "fibo_retrace_confluence"}): 0.5,
+    frozenset({"range_box_edge", "sr_bounce"}): 0.25,
+    frozenset({"compression_expansion", "momentum_continuation"}): 0.3,
+}
+
+
+def _compute_correlation_discount(detectors_hit: List[str]) -> Tuple[float, Dict[str, float]]:
+    """Compute correlation discount for overlapping detector pairs.
+    
+    Returns:
+        (total_discount, per_pair_discounts)
+    """
+    total_discount = 0.0
+    per_pair: Dict[str, float] = {}
+    
+    det_set = set(detectors_hit)
+    for pair, discount in _CORRELATION_PAIRS.items():
+        if pair.issubset(det_set):
+            pair_key = "|".join(sorted(pair))
+            per_pair[pair_key] = discount
+            total_discount += discount
+    
+    return total_discount, per_pair
 
 
 def _hit_family(hit: DetectorHit) -> Optional[str]:
@@ -180,7 +210,15 @@ def combine(
         fam_n = len(by_dir[ddir]["families"])
         bonus = float(fam_bonus) * max(0, fam_n - 1)
         by_dir[ddir]["bonus"] = bonus
-        by_dir[ddir]["score_total"] = float(by_dir[ddir]["score"] + bonus)
+        
+        # Correlation discount v1: reduce score for correlated detector pairs
+        det_list = [str(h.detector) for h in by_dir[ddir]["hits"]]
+        corr_discount, corr_pairs = _compute_correlation_discount(det_list)
+        by_dir[ddir]["correlation_discount"] = corr_discount
+        by_dir[ddir]["correlation_pairs"] = corr_pairs
+        
+        # Final score = raw + bonus - discount
+        by_dir[ddir]["score_total"] = float(by_dir[ddir]["score"] + bonus - corr_discount)
 
     buy_score = float(by_dir["BUY"].get("score_total", 0.0))
     sell_score = float(by_dir["SELL"].get("score_total", 0.0))
@@ -219,6 +257,12 @@ def combine(
         "sell_score_weighted": float(by_dir["SELL"].get("score", 0.0) or 0.0),
         "confluence_bonus_buy": float(by_dir["BUY"].get("bonus", 0.0) or 0.0),
         "confluence_bonus_sell": float(by_dir["SELL"].get("bonus", 0.0) or 0.0),
+        
+        # Correlation discount fields (v2)
+        "correlation_discount_buy": float(by_dir["BUY"].get("correlation_discount", 0.0) or 0.0),
+        "correlation_discount_sell": float(by_dir["SELL"].get("correlation_discount", 0.0) or 0.0),
+        "correlation_pairs_buy": dict(by_dir["BUY"].get("correlation_pairs", {}) or {}),
+        "correlation_pairs_sell": dict(by_dir["SELL"].get("correlation_pairs", {}) or {}),
     }
 
     buy_ok = buy_score >= float(spec_obj.min_score)

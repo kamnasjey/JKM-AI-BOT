@@ -334,6 +334,95 @@ def fixture_swing_failure_buy() -> List[Candle]:
     return candles
 
 
+# ------------------------------------------------------------------
+# NEW FIXTURES for Pro 20-pack v1
+# ------------------------------------------------------------------
+
+def fixture_vol_high() -> List[Candle]:
+    """High volatility fixture - recent bars have larger ranges."""
+    closes: List[float] = []
+    # Calm period
+    for i in range(30):
+        closes.append(100.0 + (i % 3) * 0.1)
+    # Spike period - larger moves
+    for i in range(10):
+        closes.append(100.0 + (i % 2) * 2.5)
+    return _series_from_closes(closes, wick=0.3)
+
+
+def fixture_vol_low() -> List[Candle]:
+    """Low volatility fixture - very compressed ranges."""
+    closes: List[float] = []
+    for i in range(40):
+        closes.append(100.0 + (i % 4) * 0.02)
+    return _series_from_closes(closes, wick=0.01)
+
+
+def fixture_squeeze_then_spike_up() -> List[Candle]:
+    """Compression followed by bullish expansion bar."""
+    closes: List[float] = []
+    # Compression phase - ranges decreasing
+    for i in range(15):
+        offset = 0.3 / (i + 1)  # Decreasing offset
+        closes.append(100.0 + offset * ((i % 2) * 2 - 1))
+    # Final spike bar (bullish)
+    closes.append(102.5)
+    
+    candles = _series_from_closes(closes[:-1], wick=0.03)
+    # Add expansion bar with large range
+    t = candles[-1].time + timedelta(minutes=15)
+    candles.append(_mk_candle(t=t, o=100.0, h=102.6, l=99.8, c=102.5))
+    return candles
+
+
+def fixture_impulse_pullback_break_up() -> List[Candle]:
+    """Impulse up, pullback, continuation break."""
+    closes: List[float] = []
+    # Build-up
+    for i in range(20):
+        closes.append(100.0 + i * 0.03)
+    # Impulse phase
+    for i in range(8):
+        closes.append(100.6 + i * 0.25)
+    # Pullback phase (retracing ~40%)
+    for i in range(5):
+        closes.append(102.6 - i * 0.15)
+    # Continuation break
+    closes.append(102.2)
+    closes.append(102.5)
+    closes.append(103.2)  # Break higher
+    
+    return _series_from_closes(closes, wick=0.12)
+
+
+def fixture_deviation_down_snap_up() -> List[Candle]:
+    """Range established, deviation below, snap back up."""
+    closes: List[float] = []
+    # Establish range
+    for i in range(25):
+        phase = i % 8
+        tri = (phase / 4.0) - 1.0 if phase <= 4 else 1.0 - ((phase - 4) / 4.0)
+        closes.append(100.0 + tri * 0.5)
+    # Deviation below range
+    closes.append(98.8)
+    # Snap back
+    candles = _series_from_closes(closes, wick=0.08)
+    t = candles[-1].time + timedelta(minutes=15)
+    # Reversal candle with lower wick
+    candles.append(_mk_candle(t=t, o=98.9, h=99.8, l=98.7, c=99.6))
+    return candles
+
+
+def fixture_neutral_chop() -> List[Candle]:
+    """Choppy, directionless market - no clear setups expected."""
+    closes: List[float] = []
+    for i in range(50):
+        # Random-ish oscillation with no trend
+        offset = ((i * 7) % 11 - 5) * 0.08
+        closes.append(100.0 + offset)
+    return _series_from_closes(closes, wick=0.15)
+
+
 _FIXTURES: Dict[str, Callable[[], List[Candle]]] = {
     "smoke": fixture_smoke,
     "structure_up": fixture_structure_up,
@@ -353,6 +442,13 @@ _FIXTURES: Dict[str, Callable[[], List[Candle]]] = {
     "engulfing_buy": fixture_engulfing_buy,
     "engulfing_sell": fixture_engulfing_sell,
     "swing_failure_buy": fixture_swing_failure_buy,
+    # Pro 20-pack v1 fixtures
+    "vol_high": fixture_vol_high,
+    "vol_low": fixture_vol_low,
+    "squeeze_then_spike_up": fixture_squeeze_then_spike_up,
+    "impulse_pullback_break_up": fixture_impulse_pullback_break_up,
+    "deviation_down_snap_up": fixture_deviation_down_snap_up,
+    "neutral_chop": fixture_neutral_chop,
 }
 
 

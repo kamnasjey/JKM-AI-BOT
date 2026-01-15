@@ -485,13 +485,6 @@ def list_users() -> List[Dict[str, Any]]:
             client = DashboardUserDataClient.from_env()
             if client:
                 users = client.list_active_users()
-                try:
-                    import config as _cfg
-
-                    default_pairs = list(getattr(_cfg, "WATCH_PAIRS", []) or [])
-                except Exception:
-                    default_pairs = []
-
                 out: List[Dict[str, Any]] = []
                 for u in users:
                     if not isinstance(u, dict):
@@ -508,8 +501,6 @@ def list_users() -> List[Dict[str, Any]]:
                         "telegram_enabled": u.get("telegram_enabled"),
                         "scan_enabled": u.get("scan_enabled"),
                         "plan": u.get("plan"),
-                        # Ensure engine has a non-empty universe in dashboard mode.
-                        "watch_pairs": list(default_pairs),
                     })
                 return out
         except Exception:
