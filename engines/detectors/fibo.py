@@ -215,17 +215,29 @@ class FiboRetraceConfluenceDetector(BaseDetector):
         if trend_dir not in ("up", "down"):
             return DetectorResult(detector_name=self.name, match=False)
 
-        key_levels = self.config.get("key_levels", [0.5, 0.618])
+        # Use all available retracement levels by default.
+        # If config provides key_levels (non-empty list), it acts as a filter.
+        configured_levels = self.config.get("key_levels")
         tolerance = float(self.config.get("tolerance", 0.0015))
 
+        available_pcts = [p for p in fib_levels.retrace.keys() if isinstance(p, (int, float))]
+        if configured_levels:
+            try:
+                allowed = set(float(x) for x in configured_levels)
+                available_pcts = [p for p in available_pcts if float(p) in allowed]
+            except Exception:
+                pass
+
         fib_hit = None
-        for lvl_pct in key_levels:
-            if lvl_pct not in fib_levels.retrace:
+        best_dist = None
+        for lvl_pct in sorted(available_pcts):
+            lvl_price = fib_levels.retrace.get(lvl_pct)
+            if not lvl_price:
                 continue
-            lvl_price = fib_levels.retrace[lvl_pct]
-            if lvl_price and abs(last_close - lvl_price) / lvl_price <= tolerance:
+            dist = abs(last_close - lvl_price) / lvl_price
+            if dist <= tolerance and (best_dist is None or dist < best_dist):
                 fib_hit = (lvl_pct, lvl_price)
-                break
+                best_dist = dist
 
         if fib_hit is None:
             return DetectorResult(detector_name=self.name, match=False)
@@ -255,12 +267,19 @@ class FiboRetraceConfluenceDetector(BaseDetector):
 
         direction = "BUY" if trend_dir == "up" else "SELL"
 
-        # Extension target preference (evidence only)
+        # Extension targets (evidence only) - include any available.
         ext_target = None
-        for ext in (1.618, 1.272, 2.0):
-            if ext in (fib_levels.extensions or {}):
-                ext_target = fib_levels.extensions[ext]
-                break
+        ext_map = (fib_levels.extensions or {})
+        ext_keys = sorted([k for k in ext_map.keys() if isinstance(k, (int, float))])
+        if ext_keys:
+            # Choose a representative target for evidence.
+            # Prefer common extensions if present, else use the smallest available.
+            for preferred in (1.272, 1.618, 2.0):
+                if preferred in ext_map:
+                    ext_target = ext_map[preferred]
+                    break
+            if ext_target is None:
+                ext_target = ext_map[ext_keys[0]]
 
         confidence = 0.78
         if fib_hit[0] >= 0.618:

@@ -177,6 +177,10 @@ def create_legacy_adapter(name: str) -> Type[NewBaseDetector]:
 def register_all_legacy_detectors() -> int:
     """
     Register all legacy detectors with the new unified registry.
+
+    Notes:
+    - Skips detectors that have preferred implementations in engines/detectors/.
+    - Never overrides detectors that are already registered (import-order safe).
     
     Returns:
         Number of detectors registered
@@ -185,6 +189,14 @@ def register_all_legacy_detectors() -> int:
     
     count = 0
     for name, legacy_class in LEGACY_REGISTRY.items():
+        # Prefer engines/detectors implementations for duplicates.
+        if name in DUPLICATES_TO_SKIP:
+            continue
+
+        # Never override an already-registered detector.
+        if name in getattr(detector_registry, "_detectors", {}):
+            continue
+
         try:
             # Create adapter class
             AdaptedClass = create_legacy_adapter(name)

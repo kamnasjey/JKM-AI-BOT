@@ -39,7 +39,8 @@ class TrendFiboDetector(BaseDetector):
     )
     params_schema = {
         "blocks.trend.ma_period": {"type": "int", "default": 50, "min": 10},
-        "blocks.fibo.levels": {"type": "list[float]", "default": [0.5, 0.618]},
+        # Empty list => use all available fib retracement levels from primitives.
+        "blocks.fibo.levels": {"type": "list[float]", "default": []},
         "min_rr": {"type": "float", "default": 3.0, "min": 0.0},
         "min_risk": {"type": "float", "default": 0.0, "min": 0.0},
         "trend_tf": {"type": "str", "default": "H4"},
@@ -51,7 +52,7 @@ class TrendFiboDetector(BaseDetector):
                 "trend_tf": "H4",
                 "entry_tf": "M15",
                 "min_rr": 3.0,
-                "blocks": {"trend": {"ma_period": 50}, "fibo": {"levels": [0.5, 0.618]}},
+                "blocks": {"trend": {"ma_period": 50}, "fibo": {"levels": []}},
             }
         }
     ]
@@ -78,7 +79,16 @@ class TrendFiboDetector(BaseDetector):
         fibo_cfg = blocks.get("fibo", {}) or {}
         
         ma_period = int(trend_cfg.get("ma_period", 50))
-        fibo_levels = tuple(fibo_cfg.get("levels", [0.5, 0.618]))
+        # Use all fib retracement levels from primitives by default.
+        cfg_levels = fibo_cfg.get("levels")
+        if isinstance(cfg_levels, (list, tuple)) and len(cfg_levels) > 0:
+            fibo_levels = tuple(float(x) for x in cfg_levels)
+        else:
+            retrace = getattr(getattr(primitives, "fib_levels", None), "retrace", None)
+            if retrace:
+                fibo_levels = tuple(sorted(float(k) for k in retrace.keys() if isinstance(k, (int, float))))
+            else:
+                fibo_levels = (0.5, 0.618)
         min_rr = float(user_config.get("min_rr", 3.0))
         min_risk = float(user_config.get("min_risk", user_config.get("risk_pips", 0.0)))
         
